@@ -10,7 +10,8 @@ import {
   Brain,
   Loader2,
 } from 'lucide-react';
-import { parseNatWestCSV } from '@/lib/csv/natwest';
+import { parseNatWestCSV, isNatWestFormat } from '@/lib/csv/natwest';
+import { parseAmexCSV, isAmexFormat } from '@/lib/csv/amex';
 import { formatGBP } from '@/lib/utils';
 import { CATEGORY_COLORS } from '@/lib/categories';
 import { useTransactionContext } from '@/context/transactions';
@@ -22,6 +23,7 @@ interface ImportResult {
   newAdded: number;
   duplicatesSkipped: number;
   errors: string[];
+  bank?: string;
 }
 
 export default function UploadPage() {
@@ -108,8 +110,24 @@ export default function UploadPage() {
       reader.onload = async (e) => {
         const csv = e.target?.result as string;
 
-        // Use our NatWest parser first (handles the known format)
-        const result = parseNatWestCSV(csv);
+        // Auto-detect bank format from CSV headers
+        const firstLine = csv.split('\n')[0] || '';
+        const headers = firstLine.split(',').map((h) => h.trim().replace(/^"|"$/g, ''));
+
+        let result: { transactions: Transaction[]; errors: string[] };
+        let detectedBank = 'Unknown';
+
+        if (isAmexFormat(headers)) {
+          result = parseAmexCSV(csv);
+          detectedBank = 'Amex';
+        } else if (isNatWestFormat(headers)) {
+          result = parseNatWestCSV(csv);
+          detectedBank = 'NatWest';
+        } else {
+          // Fallback: try NatWest parser
+          result = parseNatWestCSV(csv);
+          detectedBank = 'NatWest (assumed)';
+        }
 
         // Auto-save immediately
         const countBefore = existingTransactions.length;
@@ -123,6 +141,7 @@ export default function UploadPage() {
           newAdded,
           duplicatesSkipped,
           errors: result.errors,
+          bank: detectedBank,
         });
         setIsProcessing(false);
 
@@ -238,7 +257,7 @@ export default function UploadPage() {
             : 'Drop your CSV here'}
         </h2>
         <p className="text-sm text-muted mb-3">
-          NatWest supported · Amex coming soon · AI auto-categorizes
+          NatWest & Amex auto-detected · AI auto-categorizes
         </p>
         <label className="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer">
           <Plus className="h-4 w-4" />
@@ -284,6 +303,11 @@ export default function UploadPage() {
             )}
             <span className="font-medium text-foreground">
               {lastImport.fileName}
+              {lastImport.bank && (
+                <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-accent/20 text-accent">
+                  {lastImport.bank}
+                </span>
+              )}
             </span>
           </div>
           <div className="flex flex-wrap gap-4 text-sm">
