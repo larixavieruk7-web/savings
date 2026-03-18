@@ -144,9 +144,6 @@ export const DEFAULT_RULES: CategoryRule[] = [
   // PayPal (common in POS type)
   { pattern: 'PAYPAL', category: 'Shopping', source: 'system' },
 
-  // Dining (from PURCHASE type)
-  { pattern: 'JUST EAT', category: 'Dining Out', source: 'system' },
-
   // Faster payments received
   { pattern: 'FASTER PAYMENT RECEIVED', category: 'Income', source: 'system' },
 ];

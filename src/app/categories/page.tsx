@@ -423,9 +423,9 @@ export default function CategoriesPage() {
                 </button>
                 {!isCollapsed && (
                   <div className="pb-2">
-                    {rules.map((rule) => (
+                    {rules.map((rule, ruleIdx) => (
                       <div
-                        key={`${rule.pattern}-${rule.category}`}
+                        key={`${rule.pattern}-${rule.category}-${ruleIdx}`}
                         className="px-5 pl-12 py-1.5 flex items-center gap-3 text-sm"
                       >
                         <code className="font-mono text-muted bg-background px-1.5 py-0.5 rounded text-xs">
