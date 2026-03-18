@@ -5,12 +5,31 @@ import { useTransactionContext } from '@/context/transactions';
 import { formatGBP } from '@/lib/utils';
 import { saveTransactions, getTransactions } from '@/lib/storage';
 import { format, parseISO } from 'date-fns';
-import { Search, Filter, Upload, ArrowUpDown, Brain, Loader2 } from 'lucide-react';
+import { Search, Filter, Upload, ArrowUpDown, Brain, Loader2, CheckSquare, XCircle, Tag } from 'lucide-react';
 import Link from 'next/link';
 import { CategoryEditor } from '@/components/CategoryEditor';
 
 type SortField = 'date' | 'amount' | 'category' | 'description';
 type SortDir = 'asc' | 'desc';
+
+const BULK_CATEGORY_GROUPS: Record<string, string[]> = {
+  Essential: [
+    'Rent / Mortgage', 'Utilities', 'Groceries', 'Insurance', 'Transport',
+    'Phone & Internet', 'Childcare & Education', 'Healthcare', 'Debt Repayments',
+  ],
+  Discretionary: [
+    'Dining Out', 'Entertainment', 'Shopping', 'Subscriptions', 'Personal Care',
+    'Holidays & Travel', 'Drinks & Nights Out',
+  ],
+  Financial: [
+    'Savings & Investments', 'Transfers', 'Cash Withdrawals', 'Bank Charges', 'Charity',
+  ],
+  Income: ['Salary', 'Benefits', 'Refunds', 'Other Income'],
+};
+
+function isBulkEssentialDefault(category: string): boolean {
+  return BULK_CATEGORY_GROUPS.Essential.includes(category);
+}
 
 export default function TransactionsPage() {
   const { transactions, loaded, reload } = useTransactionContext();
@@ -22,6 +41,11 @@ export default function TransactionsPage() {
   const perPage = 50;
   const [isCategorizing, setIsCategorizing] = useState(false);
   const [categorizeResult, setCategorizeResult] = useState('');
+
+  // Bulk selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkCategory, setBulkCategory] = useState('');
+  const [bulkEssential, setBulkEssential] = useState(false);
 
   const uncategorizedCount = useMemo(
     () => transactions.filter((t) => t.category === 'Other' && t.amount < 0 && t.categorySource !== 'manual').length,
@@ -142,6 +166,61 @@ export default function TransactionsPage() {
     }
     setPage(0);
   };
+
+  // Bulk selection helpers
+  const toggleSelectOne = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAllOnPage = useCallback(() => {
+    const pageIds = paged.map((t) => t.id);
+    setSelectedIds((prev) => {
+      const allSelected = pageIds.every((id) => prev.has(id));
+      const next = new Set(prev);
+      if (allSelected) {
+        pageIds.forEach((id) => next.delete(id));
+      } else {
+        pageIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  }, [paged]);
+
+  const allOnPageSelected = paged.length > 0 && paged.every((t) => selectedIds.has(t.id));
+  const someOnPageSelected = paged.some((t) => selectedIds.has(t.id));
+
+  const handleBulkApply = useCallback(() => {
+    if (!bulkCategory || selectedIds.size === 0) return;
+    const all = getTransactions();
+    for (const t of all) {
+      if (selectedIds.has(t.id)) {
+        t.category = bulkCategory;
+        t.isEssential = bulkEssential;
+        t.categorySource = 'manual';
+      }
+    }
+    saveTransactions(all);
+    reload();
+    setSelectedIds(new Set());
+    setBulkCategory('');
+    setBulkEssential(false);
+  }, [bulkCategory, bulkEssential, selectedIds, reload]);
+
+  const handleBulkClear = useCallback(() => {
+    setSelectedIds(new Set());
+    setBulkCategory('');
+    setBulkEssential(false);
+  }, []);
+
+  const handleBulkCategoryChange = useCallback((cat: string) => {
+    setBulkCategory(cat);
+    setBulkEssential(isBulkEssentialDefault(cat));
+  }, []);
 
   // Filtered stats
   const filteredIncome = filtered.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);
@@ -266,6 +345,16 @@ export default function TransactionsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-card-border text-muted">
+                <th className="p-3 w-10">
+                  <input
+                    type="checkbox"
+                    checked={allOnPageSelected}
+                    ref={(el) => { if (el) el.indeterminate = someOnPageSelected && !allOnPageSelected; }}
+                    onChange={toggleSelectAllOnPage}
+                    className="rounded border-card-border bg-card accent-accent h-4 w-4 cursor-pointer"
+                    title="Select all on this page"
+                  />
+                </th>
                 {([
                   ['date', 'Date'],
                   ['description', 'Description'],
@@ -296,8 +385,18 @@ export default function TransactionsPage() {
               {paged.map((t, i) => (
                 <tr
                   key={`${t.id}-${i}`}
-                  className="border-b border-card-border/50 hover:bg-card-border/20 transition-colors"
+                  className={`border-b border-card-border/50 hover:bg-card-border/20 transition-colors ${
+                    selectedIds.has(t.id) ? 'bg-accent/5' : ''
+                  }`}
                 >
+                  <td className="p-3 w-10">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(t.id)}
+                      onChange={() => toggleSelectOne(t.id)}
+                      className="rounded border-card-border bg-card accent-accent h-4 w-4 cursor-pointer"
+                    />
+                  </td>
                   <td className="p-3 text-muted whitespace-nowrap">
                     {format(parseISO(t.date), 'dd MMM yyyy')}
                   </td>
@@ -344,6 +443,70 @@ export default function TransactionsPage() {
           </div>
         )}
       </div>
+
+      {/* Bulk Action Bar */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 z-50">
+          <div className="max-w-5xl mx-auto px-4 pb-4">
+            <div className="bg-card/90 backdrop-blur border border-card-border rounded-t-xl shadow-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-foreground shrink-0">
+                <CheckSquare className="h-4 w-4 text-accent" />
+                {selectedIds.size} transaction{selectedIds.size !== 1 ? 's' : ''} selected
+              </div>
+
+              <div className="flex flex-1 flex-col sm:flex-row items-start sm:items-center gap-3">
+                {/* Category dropdown */}
+                <div className="relative">
+                  <Tag className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted" />
+                  <select
+                    value={bulkCategory}
+                    onChange={(e) => handleBulkCategoryChange(e.target.value)}
+                    className="pl-8 pr-8 py-2 bg-card border border-card-border rounded-lg text-foreground text-sm focus:outline-none focus:border-accent appearance-none cursor-pointer min-w-[200px]"
+                  >
+                    <option value="">Select category...</option>
+                    {Object.entries(BULK_CATEGORY_GROUPS).map(([group, cats]) => (
+                      <optgroup key={group} label={group}>
+                        {cats.map((cat) => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Essential checkbox */}
+                <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={bulkEssential}
+                    onChange={(e) => setBulkEssential(e.target.checked)}
+                    className="rounded border-card-border bg-card accent-accent h-4 w-4"
+                  />
+                  Essential
+                </label>
+
+                {/* Apply button */}
+                <button
+                  onClick={handleBulkApply}
+                  disabled={!bulkCategory}
+                  className="inline-flex items-center gap-1.5 bg-accent hover:bg-accent-hover disabled:opacity-40 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors shrink-0"
+                >
+                  Apply
+                </button>
+
+                {/* Clear button */}
+                <button
+                  onClick={handleBulkClear}
+                  className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-foreground px-3 py-2 rounded-lg border border-card-border hover:bg-card-border/40 transition-colors shrink-0"
+                >
+                  <XCircle className="h-3.5 w-3.5" />
+                  Clear
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

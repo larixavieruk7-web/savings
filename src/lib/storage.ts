@@ -7,6 +7,7 @@ const KEYS = {
   customRules: 'savings_custom_rules',
   savingsTargets: 'savings_targets',
   insightsCache: 'savings_insights_cache',
+  customCategories: 'savings_custom_colors',
 } as const;
 
 // ─── Transactions ────────────────────────────────────────────────
@@ -134,4 +135,22 @@ export function cacheInsights(data: Record<string, unknown>): void {
     ...data,
     cachedAt: Date.now(),
   }));
+}
+
+// ─── Custom Categories ──────────────────────────────────────────
+
+export function getCustomCategories(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(KEYS.customCategories);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function addCustomCategory(name: string, color: string): void {
+  const existing = getCustomCategories();
+  existing[name] = color;
+  localStorage.setItem(KEYS.customCategories, JSON.stringify(existing));
 }

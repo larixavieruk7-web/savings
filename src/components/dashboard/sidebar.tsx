@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Upload,
   Receipt,
+  Tags,
   TrendingUp,
   Brain,
   PiggyBank,
@@ -16,6 +17,7 @@ const NAV_ITEMS = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/upload', label: 'Upload CSV', icon: Upload },
   { href: '/transactions', label: 'Transactions', icon: Receipt },
+  { href: '/categories', label: 'Categories', icon: Tags },
   { href: '/trends', label: 'Trends', icon: TrendingUp },
   { href: '/insights', label: 'AI Insights', icon: Brain },
 ];
