@@ -94,7 +94,8 @@ export const DEFAULT_RULES: CategoryRule[] = [
 
   // Cash
   { pattern: 'ATM', category: 'Cash Withdrawals', source: 'system' },
-  { pattern: 'CASH', category: 'Cash Withdrawals', source: 'system' },
+  { pattern: 'YOURCASH', category: 'Cash Withdrawals', source: 'system' },
+  { pattern: 'ROYAL BANK', category: 'Cash Withdrawals', source: 'system' },
 
   // Entertainment
   { pattern: 'CINEMA', category: 'Entertainment', source: 'system' },
@@ -102,6 +103,52 @@ export const DEFAULT_RULES: CategoryRule[] = [
   { pattern: 'VUE', category: 'Entertainment', source: 'system' },
   { pattern: 'CINEWORLD', category: 'Entertainment', source: 'system' },
   { pattern: 'TICKETMASTER', category: 'Entertainment', source: 'system' },
+
+  // ─── NatWest-specific patterns (from Larissa & Gus's actual data) ───
+
+  // Transfers between own accounts (DPC type)
+  { pattern: 'To A/C', category: 'Transfers', source: 'system' },
+  { pattern: 'From A/C', category: 'Transfers', source: 'system' },
+  { pattern: 'Via Mobile Xfer', category: 'Transfers', source: 'system' },
+  { pattern: 'ROUND UP FROM', category: 'Savings & Investments', source: 'system' },
+
+  // Interest
+  { pattern: 'INTER BON', category: 'Income', source: 'system' },
+
+  // Bank charges / fees
+  { pattern: 'NON-STERLING TRANSACTION', category: 'Bank Charges', source: 'system' },
+
+  // Salary (Gus's BAC payments)
+  { pattern: 'XAVIER DA SILVA G', category: 'Salary', source: 'system' },
+
+  // Rewards
+  { pattern: 'MYREWARDS', category: 'Income', source: 'system' },
+
+  // Loans & Debt
+  { pattern: 'NATWEST LOAN', category: 'Debt Repayments', source: 'system' },
+  { pattern: 'NATIONWIDE B S', category: 'Debt Repayments', source: 'system' },
+
+  // Utilities (from D/D patterns)
+  { pattern: 'OCTOPUS ENERGY', category: 'Utilities', source: 'system' },
+  { pattern: 'BRISTOLWESSEXWATER', category: 'Utilities', source: 'system' },
+  { pattern: 'SOUTH WEST WATER', category: 'Utilities', source: 'system' },
+  { pattern: 'BCP COUNCIL', category: 'Utilities', source: 'system' },
+  { pattern: 'CTAX', category: 'Utilities', source: 'system' },
+
+  // Insurance
+  { pattern: 'L&G INSURANCE', category: 'Insurance', source: 'system' },
+
+  // Transport / Car
+  { pattern: 'DVLA', category: 'Transport', source: 'system' },
+
+  // PayPal (common in POS type)
+  { pattern: 'PAYPAL', category: 'Shopping', source: 'system' },
+
+  // Dining (from PURCHASE type)
+  { pattern: 'JUST EAT', category: 'Dining Out', source: 'system' },
+
+  // Faster payments received
+  { pattern: 'FASTER PAYMENT RECEIVED', category: 'Income', source: 'system' },
 ];
 
 /** Category colors for charts — includes both rule-based and AI categories */

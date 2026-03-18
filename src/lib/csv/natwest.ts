@@ -66,6 +66,9 @@ export function parseNatWestCSV(
     try {
       if (!row.Date?.trim() || !row.Value?.trim()) continue;
 
+      // Skip "Balance as at" summary rows
+      if (row.Description?.trim().startsWith('Balance as at')) continue;
+
       const parsedDate = parseNatWestDate(row.Date);
       const isoDate = format(parsedDate, 'yyyy-MM-dd');
 
@@ -84,12 +87,20 @@ export function parseNatWestCSV(
 
       // Categorize
       const description = row.Description?.trim() || '';
+      const txnType = row.Type?.trim().toUpperCase() || '';
       const { category, subcategory } = categorize(description, customRules);
 
-      // Determine if income (positive amount with no specific category)
-      const finalCategory = amountPence > 0 && category === 'Other'
-        ? 'Income'
-        : category;
+      // NatWest type-based fallback when description rules don't match
+      let finalCategory = category;
+      if (category === 'Other') {
+        if (txnType === 'CHG') finalCategory = 'Bank Charges';
+        else if (txnType === 'C/L') finalCategory = 'Cash Withdrawals';
+        else if (txnType === 'INT') finalCategory = 'Income';
+        else if (txnType === 'FEES') finalCategory = 'Bank Charges';
+        else if (amountPence > 0) finalCategory = 'Income';
+      } else if (amountPence > 0 && category === 'Other') {
+        finalCategory = 'Income';
+      }
 
       // Build a unique ID including account to handle multi-account CSVs
       const accountNum = row['Account Number']?.trim() || '';
