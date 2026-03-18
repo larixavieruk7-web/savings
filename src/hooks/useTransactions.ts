@@ -27,22 +27,46 @@ function getPeriodStartDate(period: PeriodOption): Date | null {
   }
 }
 
+// Cache parsed transactions in module scope to avoid re-parsing JSON on every navigation
+let _cachedTransactions: Transaction[] | null = null;
+let _cacheVersion = 0;
+
+function getCachedTransactions(): Transaction[] {
+  if (_cachedTransactions === null) {
+    _cachedTransactions = getTransactions();
+  }
+  return _cachedTransactions;
+}
+
+function invalidateCache() {
+  _cachedTransactions = null;
+  _cacheVersion++;
+}
+
 export function useTransactions() {
-  const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const [allTransactions, setAllTransactions] = useState<Transaction[]>(() => {
+    if (typeof window === 'undefined') return [];
+    return getCachedTransactions();
+  });
+  const [loaded, setLoaded] = useState(() => typeof window !== 'undefined');
   const [period, setPeriod] = useState<PeriodOption>('last30');
 
   useEffect(() => {
-    setAllTransactions(getTransactions());
-    setLoaded(true);
-  }, []);
+    if (!loaded) {
+      setAllTransactions(getCachedTransactions());
+      setLoaded(true);
+    }
+  }, [loaded]);
 
   const reload = useCallback(() => {
-    setAllTransactions(getTransactions());
+    invalidateCache();
+    setAllTransactions(getCachedTransactions());
   }, []);
 
   const addTransactions = useCallback((incoming: Transaction[]) => {
     const merged = mergeTransactions(incoming);
+    invalidateCache();
+    _cachedTransactions = merged;
     setAllTransactions(merged);
     return merged;
   }, []);
@@ -50,6 +74,8 @@ export function useTransactions() {
   const updateMany = useCallback(
     (updates: (Partial<Transaction> & { id: string })[]) => {
       const updated = updateTransactions(updates);
+      invalidateCache();
+      _cachedTransactions = updated;
       setAllTransactions(updated);
       return updated;
     },
@@ -63,7 +89,9 @@ export function useTransactions() {
       if (idx >= 0) {
         all[idx] = { ...all[idx], ...changes };
         saveTransactions(all);
-        setAllTransactions([...all]);
+        invalidateCache();
+        _cachedTransactions = [...all];
+        setAllTransactions(_cachedTransactions);
       }
     },
     []
@@ -71,6 +99,7 @@ export function useTransactions() {
 
   const clear = useCallback(() => {
     clearTransactions();
+    invalidateCache();
     setAllTransactions([]);
   }, []);
 
