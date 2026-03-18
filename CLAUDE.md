@@ -88,6 +88,10 @@ category_rules (
 ### NatWest CSV Format
 NatWest exports CSVs with columns:
 `Date, Type, Description, Value, Balance, Account Name, Account Number`
+- Date format: `dd MMMM yyyy` (e.g., "29 May 2025") — NOT dd/MM/yyyy
+- Value: signed decimal (negative = outflow), no currency symbol
+- Multi-account: single CSV contains rows from multiple accounts (e.g., "Current Account", "Dining/goingOut Fund")
+- Description may be quoted with commas inside (PapaParse handles this)
 
 ### Transaction Categorization Strategy
 1. **Keyword rules** (~70% of transactions) — UK merchant patterns: TESCO/SAINSBURY/ASDA→Groceries, TFL/UBER→Transport, NETFLIX/SPOTIFY→Subscriptions, DELIVEROO/JUST EAT→Dining Out, SHELL/BP→Fuel, etc.
