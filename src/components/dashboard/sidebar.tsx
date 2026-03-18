@@ -5,21 +5,27 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   Upload,
+  Wallet,
   Receipt,
   Tags,
   TrendingUp,
   Brain,
+  BookOpen,
   PiggyBank,
+  MessageCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/upload', label: 'Upload CSV', icon: Upload },
+  { href: '/accounts', label: 'Accounts', icon: Wallet },
   { href: '/transactions', label: 'Transactions', icon: Receipt },
   { href: '/categories', label: 'Categories', icon: Tags },
   { href: '/trends', label: 'Trends', icon: TrendingUp },
   { href: '/insights', label: 'AI Insights', icon: Brain },
+  { href: '/knowledge', label: 'Knowledge', icon: BookOpen },
+  { href: '/ask', label: 'Ask AI', icon: MessageCircle },
 ];
 
 export function Sidebar() {

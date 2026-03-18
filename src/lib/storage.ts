@@ -8,6 +8,8 @@ const KEYS = {
   savingsTargets: 'savings_targets',
   insightsCache: 'savings_insights_cache',
   customCategories: 'savings_custom_colors',
+  accountNicknames: 'savings_account_nicknames',
+  knowledgeBank: 'savings_knowledge_bank',
 } as const;
 
 // ─── Transactions ────────────────────────────────────────────────
@@ -153,4 +155,62 @@ export function addCustomCategory(name: string, color: string): void {
   const existing = getCustomCategories();
   existing[name] = color;
   localStorage.setItem(KEYS.customCategories, JSON.stringify(existing));
+}
+
+// ─── Account Nicknames ──────────────────────────────────────────
+
+export function getAccountNicknames(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(KEYS.accountNicknames);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveAccountNickname(rawName: string, nickname: string): void {
+  const existing = getAccountNicknames();
+  existing[rawName] = nickname;
+  localStorage.setItem(KEYS.accountNicknames, JSON.stringify(existing));
+}
+
+export function getDisplayName(rawName: string): string {
+  const nicknames = getAccountNicknames();
+  return nicknames[rawName] || rawName;
+}
+
+// ─── Knowledge Bank ─────────────────────────────────────────────
+
+import type { KnowledgeEntry } from '@/types';
+
+export function getKnowledgeEntries(): KnowledgeEntry[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(KEYS.knowledgeBank);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveKnowledgeEntries(entries: KnowledgeEntry[]): void {
+  localStorage.setItem(KEYS.knowledgeBank, JSON.stringify(entries));
+}
+
+export function addKnowledgeEntry(entry: Omit<KnowledgeEntry, 'id' | 'createdAt'>): KnowledgeEntry {
+  const entries = getKnowledgeEntries();
+  const newEntry: KnowledgeEntry = {
+    ...entry,
+    id: `kb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    createdAt: new Date().toISOString(),
+  };
+  entries.unshift(newEntry);
+  saveKnowledgeEntries(entries);
+  return newEntry;
+}
+
+export function deleteKnowledgeEntry(id: string): void {
+  const entries = getKnowledgeEntries().filter((e) => e.id !== id);
+  saveKnowledgeEntries(entries);
 }

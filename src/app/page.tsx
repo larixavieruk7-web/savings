@@ -8,6 +8,7 @@ import { formatGBP, formatChange, gbpTooltipFormatter } from '@/lib/utils';
 import { CATEGORY_COLORS } from '@/lib/categories';
 import { getSavingsTargets, saveSavingsTargets } from '@/lib/storage';
 import type { CategoryName, SavingsTarget } from '@/types';
+import { PeriodSelector } from '@/components/dashboard/period-selector';
 import {
   PieChart,
   Pie,
@@ -73,24 +74,29 @@ export default function DashboardHome() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
-          {dateRange && (
-            <p className="text-muted mt-1">
-              {format(parseISO(dateRange.from), 'dd MMM yyyy')} —{' '}
-              {format(parseISO(dateRange.to), 'dd MMM yyyy')} ·{' '}
-              {transactions.length.toLocaleString()} transactions
-            </p>
-          )}
+          <Link
+            href="/upload"
+            className="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+          >
+            <Upload className="h-4 w-4" />
+            Upload More
+          </Link>
         </div>
-        <Link
-          href="/upload"
-          className="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-        >
-          <Upload className="h-4 w-4" />
-          Upload More
-        </Link>
+        <div className="flex items-center justify-between">
+          <div>
+            {dateRange && (
+              <p className="text-muted">
+                {format(parseISO(dateRange.from), 'dd MMM yyyy')} —{' '}
+                {format(parseISO(dateRange.to), 'dd MMM yyyy')} ·{' '}
+                {transactions.length.toLocaleString()} transactions
+              </p>
+            )}
+          </div>
+          <PeriodSelector />
+        </div>
       </div>
 
       {/* KPI Cards */}

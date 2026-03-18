@@ -38,7 +38,10 @@
       "Bash(cp \"//GXPC/Shared_goods/lib/categoriser.ts\" \"c:/savings_dashboard/src/lib/ai/categoriser.ts\")",
       "Bash(cp \"//GXPC/Shared_goods/lib/csv-parser.ts\" \"c:/savings_dashboard/src/lib/ai/csv-parser.ts\")",
       "Bash(cp \"//GXPC/Shared_goods/lib/insights-engine.ts\" \"c:/savings_dashboard/src/lib/ai/insights-engine.ts\")",
-      "Bash(mkdir -p c:/savings_dashboard/src/lib/ai)"
+      "Bash(mkdir -p c:/savings_dashboard/src/lib/ai)",
+      "Bash(while read:*)",
+      "Bash(do echo:*)",
+      "Bash(done)"
     ],
     "deny": [
       "Bash(rm -rf /)",

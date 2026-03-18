@@ -33,6 +33,16 @@ export interface SavingsTarget {
   description?: string;
 }
 
+export interface KnowledgeEntry {
+  id: string;
+  date: string; // ISO date
+  title: string;
+  description: string;
+  tags?: string[]; // e.g., ['larissa', 'travel', 'barcelona']
+  type: 'event' | 'context' | 'goal' | 'note';
+  createdAt: string;
+}
+
 export interface Insight {
   id: string;
   type: 'spending' | 'anomaly' | 'saving' | 'trend' | 'recurring';
@@ -53,6 +63,8 @@ export interface MonthlyBreakdown {
   discretionarySpend: number; // pence
   byCategory: Record<string, number>;
 }
+
+export type PeriodOption = 'last30' | 'last90' | 'last6m' | 'last12m' | 'all';
 
 export type CategoryName =
   | 'Housing'

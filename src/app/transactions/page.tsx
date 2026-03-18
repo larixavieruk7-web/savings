@@ -6,6 +6,7 @@ import { formatGBP } from '@/lib/utils';
 import { saveTransactions, getTransactions } from '@/lib/storage';
 import { format, parseISO } from 'date-fns';
 import { Search, Filter, Upload, ArrowUpDown, Brain, Loader2, CheckSquare, XCircle, Tag } from 'lucide-react';
+import { PeriodSelector } from '@/components/dashboard/period-selector';
 import Link from 'next/link';
 import { CategoryEditor } from '@/components/CategoryEditor';
 
@@ -249,12 +250,15 @@ export default function TransactionsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">Transactions</h1>
-        <p className="text-muted mt-1">
-          {filtered.length.toLocaleString()} transaction{filtered.length !== 1 ? 's' : ''}
-          {search || categoryFilter ? ' (filtered)' : ''}
-        </p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-3xl font-bold text-foreground">Transactions</h1>
+          <p className="text-muted mt-1">
+            {filtered.length.toLocaleString()} transaction{filtered.length !== 1 ? 's' : ''}
+            {search || categoryFilter ? ' (filtered)' : ''}
+          </p>
+        </div>
+        <PeriodSelector />
       </div>
 
       {/* Filters */}

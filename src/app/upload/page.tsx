@@ -25,7 +25,7 @@ interface ImportResult {
 }
 
 export default function UploadPage() {
-  const { addTransactions, transactions: existingTransactions } =
+  const { addTransactions, allTransactions: existingTransactions } =
     useTransactionContext();
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);

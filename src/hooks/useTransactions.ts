@@ -8,32 +8,49 @@ import {
   updateTransactions,
   saveTransactions,
 } from '@/lib/storage';
-import type { Transaction, MonthlyBreakdown } from '@/types';
-import { format, parseISO } from 'date-fns';
+import type { Transaction, MonthlyBreakdown, PeriodOption } from '@/types';
+import { format, parseISO, subDays, subMonths, startOfDay } from 'date-fns';
+
+function getPeriodStartDate(period: PeriodOption): Date | null {
+  const now = new Date();
+  switch (period) {
+    case 'last30':
+      return startOfDay(subDays(now, 30));
+    case 'last90':
+      return startOfDay(subDays(now, 90));
+    case 'last6m':
+      return startOfDay(subMonths(now, 6));
+    case 'last12m':
+      return startOfDay(subMonths(now, 12));
+    case 'all':
+      return null;
+  }
+}
 
 export function useTransactions() {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [period, setPeriod] = useState<PeriodOption>('last30');
 
   useEffect(() => {
-    setTransactions(getTransactions());
+    setAllTransactions(getTransactions());
     setLoaded(true);
   }, []);
 
   const reload = useCallback(() => {
-    setTransactions(getTransactions());
+    setAllTransactions(getTransactions());
   }, []);
 
   const addTransactions = useCallback((incoming: Transaction[]) => {
     const merged = mergeTransactions(incoming);
-    setTransactions(merged);
+    setAllTransactions(merged);
     return merged;
   }, []);
 
   const updateMany = useCallback(
     (updates: (Partial<Transaction> & { id: string })[]) => {
       const updated = updateTransactions(updates);
-      setTransactions(updated);
+      setAllTransactions(updated);
       return updated;
     },
     []
@@ -46,7 +63,7 @@ export function useTransactions() {
       if (idx >= 0) {
         all[idx] = { ...all[idx], ...changes };
         saveTransactions(all);
-        setTransactions([...all]);
+        setAllTransactions([...all]);
       }
     },
     []
@@ -54,41 +71,56 @@ export function useTransactions() {
 
   const clear = useCallback(() => {
     clearTransactions();
-    setTransactions([]);
+    setAllTransactions([]);
   }, []);
 
+  // Derive period date boundaries
+  const startDate = useMemo(() => {
+    const d = getPeriodStartDate(period);
+    return d ? d.toISOString() : null;
+  }, [period]);
+
+  const endDate = useMemo(() => new Date().toISOString(), []);
+
+  // Filtered transactions based on the active period
+  const filteredTransactions = useMemo(() => {
+    if (!startDate) return allTransactions;
+    return allTransactions.filter((t) => t.date >= startDate);
+  }, [allTransactions, startDate]);
+
+  // All computed values use filteredTransactions
   const totalIncome = useMemo(
-    () => transactions.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0),
-    [transactions]
+    () => filteredTransactions.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0),
+    [filteredTransactions]
   );
 
   const totalSpending = useMemo(
     () =>
-      transactions
+      filteredTransactions
         .filter((t) => t.amount < 0)
         .reduce((s, t) => s + Math.abs(t.amount), 0),
-    [transactions]
+    [filteredTransactions]
   );
 
   const essentialSpending = useMemo(
     () =>
-      transactions
+      filteredTransactions
         .filter((t) => t.amount < 0 && t.isEssential === true)
         .reduce((s, t) => s + Math.abs(t.amount), 0),
-    [transactions]
+    [filteredTransactions]
   );
 
   const discretionarySpending = useMemo(
     () =>
-      transactions
+      filteredTransactions
         .filter((t) => t.amount < 0 && t.isEssential === false)
         .reduce((s, t) => s + Math.abs(t.amount), 0),
-    [transactions]
+    [filteredTransactions]
   );
 
   const categoryBreakdown = useMemo(() => {
     const map: Record<string, number> = {};
-    for (const t of transactions) {
+    for (const t of filteredTransactions) {
       if (t.amount < 0) {
         map[t.category] = (map[t.category] || 0) + Math.abs(t.amount);
       }
@@ -96,11 +128,11 @@ export function useTransactions() {
     return Object.entries(map)
       .sort(([, a], [, b]) => b - a)
       .map(([category, amount]) => ({ category, amount }));
-  }, [transactions]);
+  }, [filteredTransactions]);
 
   const merchantBreakdown = useMemo(() => {
     const map: Record<string, { total: number; count: number }> = {};
-    for (const t of transactions) {
+    for (const t of filteredTransactions) {
       if (t.amount < 0 && t.merchantName) {
         const key = t.merchantName.toUpperCase();
         if (!map[key]) map[key] = { total: 0, count: 0 };
@@ -111,12 +143,12 @@ export function useTransactions() {
     return Object.entries(map)
       .sort(([, a], [, b]) => b.total - a.total)
       .map(([merchant, data]) => ({ merchant, ...data }));
-  }, [transactions]);
+  }, [filteredTransactions]);
 
   const monthlyBreakdowns = useMemo((): MonthlyBreakdown[] => {
     const map = new Map<string, MonthlyBreakdown>();
 
-    for (const t of transactions) {
+    for (const t of filteredTransactions) {
       const month = format(parseISO(t.date), 'yyyy-MM');
       if (!map.has(month)) {
         map.set(month, {
@@ -145,28 +177,38 @@ export function useTransactions() {
     return Array.from(map.values()).sort((a, b) =>
       a.month.localeCompare(b.month)
     );
-  }, [transactions]);
+  }, [filteredTransactions]);
 
   const dateRange = useMemo(() => {
-    if (transactions.length === 0) return null;
-    const dates = transactions.map((t) => t.date).sort();
+    if (filteredTransactions.length === 0) return null;
+    const dates = filteredTransactions.map((t) => t.date).sort();
     return { from: dates[0], to: dates[dates.length - 1] };
-  }, [transactions]);
+  }, [filteredTransactions]);
 
   // Uncategorized count (transactions needing attention)
   const uncategorizedCount = useMemo(
-    () => transactions.filter((t) => t.category === 'Other' && t.amount < 0).length,
-    [transactions]
+    () => filteredTransactions.filter((t) => t.category === 'Other' && t.amount < 0).length,
+    [filteredTransactions]
   );
 
   return {
-    transactions,
+    // Unfiltered (for upload page etc.)
+    transactions: filteredTransactions,
+    allTransactions,
+    // Period filter
+    period,
+    setPeriod,
+    startDate,
+    endDate,
+    filteredTransactions,
+    // State
     loaded,
     reload,
     addTransactions,
     updateMany,
     updateOne,
     clear,
+    // Computed (all based on filteredTransactions)
     totalIncome,
     totalSpending,
     essentialSpending,

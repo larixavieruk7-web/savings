@@ -22,6 +22,7 @@ import {
 } from 'recharts';
 import Link from 'next/link';
 import { Upload } from 'lucide-react';
+import { PeriodSelector } from '@/components/dashboard/period-selector';
 
 export default function TrendsPage() {
   const { transactions, loaded, monthlyBreakdowns, categoryBreakdown } =
@@ -111,11 +112,14 @@ export default function TrendsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">Spending Trends</h1>
-        <p className="text-muted mt-1">
-          Track how your spending changes over time
-        </p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-3xl font-bold text-foreground">Spending Trends</h1>
+          <p className="text-muted mt-1">
+            Track how your spending changes over time
+          </p>
+        </div>
+        <PeriodSelector />
       </div>
 
       {/* Cash Flow Area Chart */}
