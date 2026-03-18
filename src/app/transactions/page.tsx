@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useTransactionContext } from '@/context/transactions';
 import { formatGBP } from '@/lib/utils';
+import { saveTransactions, getTransactions } from '@/lib/storage';
 import { format, parseISO } from 'date-fns';
-import { Search, Filter, Upload, ArrowUpDown } from 'lucide-react';
+import { Search, Filter, Upload, ArrowUpDown, Brain, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { CategoryEditor } from '@/components/CategoryEditor';
 
@@ -19,6 +20,71 @@ export default function TransactionsPage() {
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [page, setPage] = useState(0);
   const perPage = 50;
+  const [isCategorizing, setIsCategorizing] = useState(false);
+  const [categorizeResult, setCategorizeResult] = useState('');
+
+  const uncategorizedCount = useMemo(
+    () => transactions.filter((t) => t.category === 'Other' && t.amount < 0 && t.categorySource !== 'manual').length,
+    [transactions]
+  );
+
+  const recategorizeAll = useCallback(async () => {
+    const uncategorized = transactions.filter(
+      (t) => t.category === 'Other' && t.amount < 0 && t.categorySource !== 'manual'
+    );
+    if (uncategorized.length === 0) {
+      setCategorizeResult('No uncategorized transactions to process.');
+      return;
+    }
+
+    setIsCategorizing(true);
+    setCategorizeResult('');
+
+    try {
+      const response = await fetch('/api/categorize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transactions: uncategorized.map((t) => ({
+            id: t.id,
+            description: t.description,
+            amount: t.amount / 100,
+            merchant: t.merchantName,
+          })),
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Categorization failed');
+      }
+
+      const { results } = await response.json();
+      const resultMap = new Map<string, { id: string; category: string; isEssential: boolean }>(
+        results.map((r: { id: string; category: string; isEssential: boolean }) => [r.id, r])
+      );
+
+      // Update localStorage directly
+      const all = getTransactions();
+      let updated = 0;
+      for (const t of all) {
+        const aiResult = resultMap.get(t.id);
+        if (aiResult && aiResult.category) {
+          t.category = aiResult.category;
+          t.isEssential = aiResult.isEssential;
+          t.categorySource = 'ai';
+          updated++;
+        }
+      }
+      saveTransactions(all);
+      reload();
+
+      setCategorizeResult(`AI categorized ${updated} transactions.`);
+    } catch (err) {
+      setCategorizeResult(err instanceof Error ? err.message : 'Failed');
+    }
+    setIsCategorizing(false);
+  }, [transactions, reload]);
 
   const categories = useMemo(() => {
     const cats = new Set(transactions.map((t) => t.category));
@@ -144,6 +210,37 @@ export default function TransactionsPage() {
           </select>
         </div>
       </div>
+
+      {/* AI Re-categorize */}
+      {uncategorizedCount > 0 && (
+        <div className="flex items-center justify-between bg-accent/10 border border-accent/30 rounded-xl p-4">
+          <div>
+            <p className="text-sm font-medium text-foreground">
+              {uncategorizedCount} transactions need categorizing
+            </p>
+            <p className="text-xs text-muted">
+              AI will classify them as essential/discretionary with specific categories
+            </p>
+          </div>
+          <button
+            onClick={recategorizeAll}
+            disabled={isCategorizing}
+            className="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shrink-0"
+          >
+            {isCategorizing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Brain className="h-4 w-4" />
+            )}
+            {isCategorizing ? 'Categorizing...' : 'Categorize with AI'}
+          </button>
+        </div>
+      )}
+      {categorizeResult && (
+        <div className="bg-success/10 border border-success/30 rounded-xl p-3 text-sm text-success">
+          {categorizeResult}
+        </div>
+      )}
 
       {/* Quick Stats */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
