@@ -7,10 +7,13 @@ A cutting-edge personal finance dashboard for a UK household (NatWest bank). Ing
 - **Framework**: Next.js 16 (App Router, TypeScript, `src/` directory)
 - **Styling**: Tailwind CSS
 - **Database**: Supabase (PostgreSQL + Auth + Storage)
-- **Visualization**: Recharts (primary) + Tremor UI components for dashboard widgets
-- **AI Insights**: OpenAI API (GPT-4o) via server-side API routes
+- **UI Components**: shadcn/ui (Tailwind-based primitives)
+- **Visualization**: Tremor (dashboard KPI cards/widgets) + Recharts (custom charts) + Nivo (calendar heatmaps, sankey money-flow)
+- **AI Insights**: OpenAI API (gpt-4o for analysis, gpt-4o-mini for categorization) via server-side API routes
 - **Deployment**: Vercel (free tier)
-- **CSV Parsing**: Papa Parse
+- **CSV Parsing**: PapaParse
+- **Date Handling**: date-fns with UK locale
+- **Future Banking API**: TrueLayer (best UK Open Banking coverage) or GoCardless (free tier)
 
 ## Architecture
 
@@ -86,15 +89,26 @@ category_rules (
 NatWest exports CSVs with columns:
 `Date, Type, Description, Value, Balance, Account Name, Account Number`
 
+### Transaction Categorization Strategy
+1. **Keyword rules** (~70% of transactions) — UK merchant patterns: TESCO/SAINSBURY/ASDA→Groceries, TFL/UBER→Transport, NETFLIX/SPOTIFY→Subscriptions, DELIVEROO/JUST EAT→Dining Out, SHELL/BP→Fuel, etc.
+2. **User corrections** (~15%) — Store manual overrides in category_rules table, apply on future imports
+3. **OpenAI fallback** (~10%) — Batch uncategorized descriptions to gpt-4o-mini for classification
+4. **Manual review** (~5%) — Present truly ambiguous ones to user
+
+### UK Category Taxonomy
+Housing, Groceries, Dining Out, Transport, Subscriptions, Shopping, Entertainment, Health & Fitness, Utilities (Gas/Electric/Water/Council Tax), Insurance, Personal Care, Education, Gifts & Donations, Travel & Holidays, Cash Withdrawals, Transfers, Income, Other
+
 ### Key Features (Priority Order)
 1. **CSV Upload** — Drag-drop NatWest CSVs, preview, deduplicate, import
 2. **Auto-Categorization** — Rule-based + OpenAI fallback for unknown merchants
-3. **Dashboard Home** — Monthly spend summary, top categories, income vs expenses
-4. **Spending Trends** — Line/area charts showing category spend over months
+3. **Dashboard Home** — KPI cards (income, spending, net savings), category donut chart, income vs expenses bar chart
+4. **Spending Trends** — Area/line charts of category spend over months with period comparison
 5. **Price Tracker** — Detect when recurring expenses increase (subscriptions, bills, groceries)
 6. **Anomaly Detection** — Flag unusual transactions or spending spikes
-7. **AI Insights** — Monthly AI-generated report: "You spent 23% more on dining out vs last month"
-8. **Savings Opportunities** — Identify subscriptions, duplicates, cheaper alternatives
+7. **AI Insights** — Conversational monthly reports with specific £ amounts and % changes
+8. **Savings Opportunities** — Subscription audit, duplicate detection, annual cost projections
+9. **Spending Heatmap** — Calendar view showing spending intensity by day (Nivo calendar)
+10. **Money Flow** — Sankey diagram: income → category breakdown (Nivo sankey)
 
 ### Design Principles
 - Dark mode first, clean modern UI

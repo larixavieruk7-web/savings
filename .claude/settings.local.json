@@ -9,7 +9,11 @@
       "Bash(mv temp_next/* .)",
       "Bash(rm -rf temp_next)",
       "Bash(npm install:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git branch:*)",
+      "Bash(git push:*)",
+      "Bash(npm run:*)"
     ]
   }
 }
