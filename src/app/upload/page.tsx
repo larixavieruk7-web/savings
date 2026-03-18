@@ -1,48 +1,73 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Upload, FileText, AlertCircle, CheckCircle2, X } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { Upload, FileText, AlertCircle, CheckCircle2, Plus } from 'lucide-react';
 import { parseNatWestCSV } from '@/lib/csv/natwest';
 import { formatGBP } from '@/lib/utils';
 import { CATEGORY_COLORS } from '@/lib/categories';
 import { useTransactionContext } from '@/context/transactions';
-import type { Transaction, CategoryName } from '@/types';
+import type { CategoryName } from '@/types';
+
+interface ImportResult {
+  fileName: string;
+  totalParsed: number;
+  newAdded: number;
+  duplicatesSkipped: number;
+  errors: string[];
+}
 
 export default function UploadPage() {
-  const router = useRouter();
   const { addTransactions, transactions: existingTransactions } = useTransactionContext();
   const [isDragging, setIsDragging] = useState(false);
-  const [parsed, setParsed] = useState<Transaction[]>([]);
-  const [errors, setErrors] = useState<string[]>([]);
-  const [fileName, setFileName] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [lastImport, setLastImport] = useState<ImportResult | null>(null);
 
   const handleFile = useCallback((file: File) => {
     if (!file.name.endsWith('.csv')) {
-      setErrors(['Please upload a CSV file']);
+      setLastImport({
+        fileName: file.name,
+        totalParsed: 0,
+        newAdded: 0,
+        duplicatesSkipped: 0,
+        errors: ['Please upload a CSV file'],
+      });
       return;
     }
 
     setIsProcessing(true);
-    setFileName(file.name);
-    setSaved(false);
 
     const reader = new FileReader();
     reader.onload = (e) => {
       const csv = e.target?.result as string;
       const result = parseNatWestCSV(csv);
-      setParsed(result.transactions);
-      setErrors(result.errors);
+
+      // Auto-save immediately
+      const countBefore = existingTransactions.length;
+      const merged = addTransactions(result.transactions);
+      const newAdded = merged.length - countBefore;
+      const duplicatesSkipped = result.transactions.length - newAdded;
+
+      setLastImport({
+        fileName: file.name,
+        totalParsed: result.transactions.length,
+        newAdded,
+        duplicatesSkipped,
+        errors: result.errors,
+      });
       setIsProcessing(false);
     };
     reader.onerror = () => {
-      setErrors(['Failed to read file']);
+      setLastImport({
+        fileName: file.name,
+        totalParsed: 0,
+        newAdded: 0,
+        duplicatesSkipped: 0,
+        errors: ['Failed to read file'],
+      });
       setIsProcessing(false);
     };
     reader.readAsText(file);
-  }, []);
+  }, [addTransactions, existingTransactions.length]);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -58,38 +83,29 @@ export default function UploadPage() {
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) handleFile(file);
+      // Reset input so the same file can be re-selected
+      e.target.value = '';
     },
     [handleFile]
   );
 
-  const handleSave = () => {
-    const merged = addTransactions(parsed);
-    setSaved(true);
-    // Count how many were new vs duplicates
-    const newCount = merged.length - existingTransactions.length;
-    const dupCount = parsed.length - newCount;
-    setErrors((prev) =>
-      dupCount > 0
-        ? [...prev, `${dupCount} duplicate transactions were skipped`]
-        : prev
-    );
-  };
-
-  const clearData = () => {
-    setParsed([]);
-    setErrors([]);
-    setFileName('');
-    setSaved(false);
-  };
-
-  // Summary stats for parsed data
-  const totalIncome = parsed
+  // Stats from all stored transactions
+  const totalIncome = existingTransactions
     .filter((t) => t.amount > 0)
     .reduce((sum, t) => sum + t.amount, 0);
-  const totalSpending = parsed
+  const totalSpending = existingTransactions
     .filter((t) => t.amount < 0)
     .reduce((sum, t) => sum + Math.abs(t.amount), 0);
-  const categoryBreakdown = parsed
+
+  // Accounts summary
+  const accountCounts = existingTransactions.reduce<Record<string, number>>((acc, t) => {
+    const name = t.accountName || 'Unknown';
+    acc[name] = (acc[name] || 0) + 1;
+    return acc;
+  }, {});
+
+  // Category breakdown of all stored data
+  const categoryBreakdown = existingTransactions
     .filter((t) => t.amount < 0)
     .reduce<Record<string, number>>((acc, t) => {
       acc[t.category] = (acc[t.category] || 0) + Math.abs(t.amount);
@@ -100,220 +116,167 @@ export default function UploadPage() {
   );
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-foreground">Upload Statement</h1>
+        <h1 className="text-3xl font-bold text-foreground">Upload Statements</h1>
         <p className="text-muted mt-1">
-          Import your NatWest bank statement CSV
-          {existingTransactions.length > 0 && (
-            <span className="ml-2 text-accent">
-              ({existingTransactions.length} transactions stored)
-            </span>
-          )}
+          Import bank statement CSVs — duplicates are automatically skipped
         </p>
       </div>
 
-      {/* Drop Zone */}
-      {parsed.length === 0 && (
-        <div
-          onDragOver={(e) => {
-            e.preventDefault();
-            setIsDragging(true);
-          }}
-          onDragLeave={() => setIsDragging(false)}
-          onDrop={handleDrop}
-          className={`border-2 border-dashed rounded-xl p-16 text-center transition-colors ${
-            isDragging
-              ? 'border-accent bg-accent/5'
-              : 'border-card-border hover:border-muted'
+      {/* Drop Zone — always visible */}
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={handleDrop}
+        className={`border-2 border-dashed rounded-xl p-10 text-center transition-colors ${
+          isDragging
+            ? 'border-accent bg-accent/5'
+            : 'border-card-border hover:border-muted'
+        }`}
+      >
+        <Upload
+          className={`h-10 w-10 mx-auto mb-3 ${
+            isDragging ? 'text-accent' : 'text-muted'
           }`}
-        >
-          <Upload
-            className={`h-12 w-12 mx-auto mb-4 ${
-              isDragging ? 'text-accent' : 'text-muted'
-            }`}
+        />
+        <h2 className="text-lg font-semibold text-foreground mb-1">
+          {isProcessing ? 'Processing...' : 'Drop your CSV here'}
+        </h2>
+        <p className="text-sm text-muted mb-3">
+          NatWest format supported · Amex coming soon
+        </p>
+        <label className="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer">
+          <Plus className="h-4 w-4" />
+          Choose CSV File
+          <input
+            type="file"
+            accept=".csv"
+            onChange={handleFileInput}
+            className="hidden"
           />
-          <h2 className="text-lg font-semibold text-foreground mb-2">
-            {isProcessing ? 'Processing...' : 'Drop your NatWest CSV here'}
-          </h2>
-          <p className="text-sm text-muted mb-4">or click to browse files</p>
-          <label className="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-white px-6 py-3 rounded-lg font-medium transition-colors cursor-pointer">
-            <FileText className="h-4 w-4" />
-            Choose CSV File
-            <input
-              type="file"
-              accept=".csv"
-              onChange={handleFileInput}
-              className="hidden"
-            />
-          </label>
-          <p className="text-xs text-muted mt-4">
-            Expected format: Date, Type, Description, Value, Balance, Account
-            Name, Account Number
-          </p>
-        </div>
-      )}
+        </label>
+      </div>
 
-      {/* Errors */}
-      {errors.length > 0 && (
-        <div className="bg-danger/10 border border-danger/30 rounded-xl p-4">
+      {/* Last Import Result */}
+      {lastImport && (
+        <div className={`border rounded-xl p-4 ${
+          lastImport.errors.length > 0 && lastImport.newAdded === 0
+            ? 'bg-danger/10 border-danger/30'
+            : 'bg-success/10 border-success/30'
+        }`}>
           <div className="flex items-center gap-2 mb-2">
-            <AlertCircle className="h-4 w-4 text-danger" />
-            <span className="font-medium text-danger">
-              {errors.length} notice{errors.length > 1 ? 's' : ''}
+            {lastImport.newAdded > 0 ? (
+              <CheckCircle2 className="h-5 w-5 text-success" />
+            ) : (
+              <AlertCircle className="h-5 w-5 text-warning" />
+            )}
+            <span className="font-medium text-foreground">
+              {lastImport.fileName}
             </span>
           </div>
-          <ul className="text-sm text-danger/80 space-y-1">
-            {errors.slice(0, 5).map((err, i) => (
-              <li key={i}>{err}</li>
-            ))}
-            {errors.length > 5 && <li>...and {errors.length - 5} more</li>}
-          </ul>
+          <div className="flex flex-wrap gap-4 text-sm">
+            <span className="text-muted">
+              Parsed: <span className="text-foreground font-medium">{lastImport.totalParsed.toLocaleString()}</span>
+            </span>
+            <span className="text-success">
+              New: <span className="font-medium">+{lastImport.newAdded.toLocaleString()}</span>
+            </span>
+            {lastImport.duplicatesSkipped > 0 && (
+              <span className="text-muted">
+                Duplicates skipped: <span className="font-medium">{lastImport.duplicatesSkipped.toLocaleString()}</span>
+              </span>
+            )}
+          </div>
+          {lastImport.errors.length > 0 && (
+            <div className="mt-2 text-xs text-danger/80">
+              {lastImport.errors.slice(0, 3).map((err, i) => (
+                <p key={i}>{err}</p>
+              ))}
+              {lastImport.errors.length > 3 && (
+                <p>...and {lastImport.errors.length - 3} more</p>
+              )}
+            </div>
+          )}
         </div>
       )}
 
-      {/* Results */}
-      {parsed.length > 0 && (
+      {/* Stored Data Summary */}
+      {existingTransactions.length > 0 && (
         <>
-          {/* File info bar + Save button */}
-          <div className="flex items-center justify-between bg-card border border-card-border rounded-xl p-4">
-            <div className="flex items-center gap-3">
-              <CheckCircle2 className="h-5 w-5 text-success" />
-              <div>
-                <p className="font-medium text-foreground">{fileName}</p>
-                <p className="text-sm text-muted">
-                  {parsed.length} transactions parsed
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              {!saved ? (
-                <button
-                  onClick={handleSave}
-                  className="inline-flex items-center gap-2 bg-success hover:bg-success/80 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                >
-                  Save to Dashboard
-                </button>
-              ) : (
-                <button
-                  onClick={() => router.push('/')}
-                  className="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                >
-                  View Dashboard
-                </button>
-              )}
-              <button
-                onClick={clearData}
-                className="p-2 text-muted hover:text-foreground transition-colors"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-
-          {saved && (
-            <div className="bg-success/10 border border-success/30 rounded-xl p-4 flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-success" />
-              <span className="text-sm text-success font-medium">
-                Transactions saved! They&apos;ll persist across sessions.
-              </span>
-            </div>
-          )}
-
-          {/* Summary Cards */}
+          {/* Overview Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-card border border-card-border rounded-xl p-6">
+            <div className="bg-card border border-card-border rounded-xl p-5">
+              <p className="text-sm text-muted mb-1">Total Transactions</p>
+              <p className="text-2xl font-bold text-foreground">
+                {existingTransactions.length.toLocaleString()}
+              </p>
+            </div>
+            <div className="bg-card border border-card-border rounded-xl p-5">
               <p className="text-sm text-muted mb-1">Total Income</p>
               <p className="text-2xl font-bold text-success">{formatGBP(totalIncome)}</p>
             </div>
-            <div className="bg-card border border-card-border rounded-xl p-6">
+            <div className="bg-card border border-card-border rounded-xl p-5">
               <p className="text-sm text-muted mb-1">Total Spending</p>
               <p className="text-2xl font-bold text-danger">{formatGBP(totalSpending)}</p>
             </div>
-            <div className="bg-card border border-card-border rounded-xl p-6">
-              <p className="text-sm text-muted mb-1">Net</p>
-              <p className={`text-2xl font-bold ${totalIncome - totalSpending >= 0 ? 'text-success' : 'text-danger'}`}>
-                {formatGBP(totalIncome - totalSpending)}
-              </p>
+          </div>
+
+          {/* Accounts Loaded */}
+          <div className="bg-card border border-card-border rounded-xl p-5">
+            <h3 className="text-base font-semibold text-foreground mb-3">
+              Accounts Loaded
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {Object.entries(accountCounts)
+                .sort(([, a], [, b]) => b - a)
+                .map(([name, count]) => (
+                  <div
+                    key={name}
+                    className="flex items-center justify-between px-3 py-2 rounded-lg border border-card-border"
+                  >
+                    <span className="text-sm text-foreground truncate">{name}</span>
+                    <span className="text-xs text-muted ml-2 shrink-0">
+                      {count.toLocaleString()} txns
+                    </span>
+                  </div>
+                ))}
             </div>
           </div>
 
           {/* Category Breakdown */}
-          <div className="bg-card border border-card-border rounded-xl p-6">
-            <h3 className="text-lg font-semibold text-foreground mb-4">Spending by Category</h3>
-            <div className="space-y-3">
+          <div className="bg-card border border-card-border rounded-xl p-5">
+            <h3 className="text-base font-semibold text-foreground mb-3">
+              All-Time Spending by Category
+            </h3>
+            <div className="space-y-2.5">
               {sortedCategories.map(([category, amount]) => {
-                const percentage = (amount / totalSpending) * 100;
+                const pct = (amount / totalSpending) * 100;
                 const color = CATEGORY_COLORS[category as CategoryName] || '#a1a1aa';
                 return (
                   <div key={category}>
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
+                        <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
                         <span className="text-sm text-foreground">{category}</span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="text-sm text-muted">{percentage.toFixed(1)}%</span>
+                        <span className="text-xs text-muted">{pct.toFixed(1)}%</span>
                         <span className="text-sm font-medium text-foreground">{formatGBP(amount)}</span>
                       </div>
                     </div>
-                    <div className="h-2 bg-card-border rounded-full overflow-hidden">
+                    <div className="h-1.5 bg-card-border rounded-full overflow-hidden">
                       <div
-                        className="h-full rounded-full transition-all duration-500"
-                        style={{ width: `${percentage}%`, backgroundColor: color }}
+                        className="h-full rounded-full"
+                        style={{ width: `${pct}%`, backgroundColor: color }}
                       />
                     </div>
                   </div>
                 );
               })}
-            </div>
-          </div>
-
-          {/* Transaction Table */}
-          <div className="bg-card border border-card-border rounded-xl overflow-hidden">
-            <div className="p-4 border-b border-card-border">
-              <h3 className="text-lg font-semibold text-foreground">Transactions Preview</h3>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-card-border text-muted">
-                    <th className="text-left p-3 font-medium">Date</th>
-                    <th className="text-left p-3 font-medium">Description</th>
-                    <th className="text-left p-3 font-medium">Category</th>
-                    <th className="text-right p-3 font-medium">Amount</th>
-                    <th className="text-right p-3 font-medium">Balance</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {parsed.slice(0, 50).map((t, i) => (
-                    <tr key={`${t.id}-${i}`} className="border-b border-card-border/50 hover:bg-card-border/20">
-                      <td className="p-3 text-muted whitespace-nowrap">{t.date}</td>
-                      <td className="p-3 text-foreground max-w-xs truncate">{t.description}</td>
-                      <td className="p-3">
-                        <span
-                          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium"
-                          style={{
-                            backgroundColor: `${CATEGORY_COLORS[t.category as CategoryName] || '#a1a1aa'}20`,
-                            color: CATEGORY_COLORS[t.category as CategoryName] || '#a1a1aa',
-                          }}
-                        >
-                          {t.category}
-                        </span>
-                      </td>
-                      <td className={`p-3 text-right font-mono ${t.amount >= 0 ? 'text-success' : 'text-danger'}`}>
-                        {formatGBP(Math.abs(t.amount))}
-                      </td>
-                      <td className="p-3 text-right font-mono text-muted">{formatGBP(t.balance)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {parsed.length > 50 && (
-                <div className="p-4 text-center text-sm text-muted">
-                  Showing 50 of {parsed.length} transactions
-                </div>
-              )}
             </div>
           </div>
         </>
