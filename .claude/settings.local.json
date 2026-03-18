@@ -1,19 +1,49 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git init:*)",
-      "Bash(git config:*)",
-      "Bash(git remote:*)",
+      "Read",
+      "Edit",
+      "Write",
+      "Glob",
+      "Grep",
+      "Bash(npm:*)",
       "Bash(npx:*)",
-      "Bash(shopt -s dotglob)",
-      "Bash(mv temp_next/* .)",
-      "Bash(rm -rf temp_next)",
-      "Bash(npm install:*)",
+      "Bash(node:*)",
+      "Bash(git status:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
       "Bash(git branch:*)",
+      "Bash(git remote:*)",
       "Bash(git push:*)",
-      "Bash(npm run:*)"
+      "Bash(git init:*)",
+      "Bash(git config:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(wc:*)",
+      "Bash(find:*)",
+      "Bash(mkdir:*)",
+      "Bash(cp:*)",
+      "Bash(mv:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(echo:*)",
+      "Bash(shopt:*)",
+      "Bash(jq:*)",
+      "Read(///GXPC/Shared_goods/**)",
+      "Skill(update-config)",
+      "Bash(cp \"//GXPC/Shared_goods/lib/retry.ts\" \"c:/savings_dashboard/src/lib/ai/retry.ts\")",
+      "Bash(cp \"//GXPC/Shared_goods/lib/merchant-extractor.ts\" \"c:/savings_dashboard/src/lib/ai/merchant-extractor.ts\")",
+      "Bash(cp \"//GXPC/Shared_goods/lib/categoriser.ts\" \"c:/savings_dashboard/src/lib/ai/categoriser.ts\")",
+      "Bash(cp \"//GXPC/Shared_goods/lib/csv-parser.ts\" \"c:/savings_dashboard/src/lib/ai/csv-parser.ts\")",
+      "Bash(cp \"//GXPC/Shared_goods/lib/insights-engine.ts\" \"c:/savings_dashboard/src/lib/ai/insights-engine.ts\")",
+      "Bash(mkdir -p c:/savings_dashboard/src/lib/ai)"
+    ],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(git reset --hard:*)",
+      "Bash(git push --force:*)"
     ]
   }
 }

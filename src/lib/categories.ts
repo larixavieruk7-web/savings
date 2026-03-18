@@ -104,9 +104,11 @@ export const DEFAULT_RULES: CategoryRule[] = [
   { pattern: 'TICKETMASTER', category: 'Entertainment', source: 'system' },
 ];
 
-/** Category colors for charts */
-export const CATEGORY_COLORS: Record<CategoryName, string> = {
+/** Category colors for charts — includes both rule-based and AI categories */
+export const CATEGORY_COLORS: Record<string, string> = {
+  // Core categories
   'Housing': '#6366f1',
+  'Rent / Mortgage': '#6366f1',
   'Groceries': '#22c55e',
   'Dining Out': '#f97316',
   'Transport': '#3b82f6',
@@ -114,15 +116,29 @@ export const CATEGORY_COLORS: Record<CategoryName, string> = {
   'Shopping': '#ec4899',
   'Entertainment': '#f59e0b',
   'Health & Fitness': '#10b981',
+  'Healthcare': '#10b981',
   'Utilities': '#64748b',
+  'Phone & Internet': '#64748b',
   'Insurance': '#06b6d4',
   'Personal Care': '#d946ef',
   'Education': '#0ea5e9',
+  'Childcare & Education': '#0ea5e9',
   'Gifts & Donations': '#f43f5e',
+  'Charity': '#f43f5e',
   'Travel & Holidays': '#14b8a6',
+  'Holidays & Travel': '#14b8a6',
+  'Drinks & Nights Out': '#fb923c',
   'Cash Withdrawals': '#78716c',
   'Transfers': '#94a3b8',
+  'Savings & Investments': '#a3e635',
+  'Debt Repayments': '#ef4444',
+  'Bank Charges': '#71717a',
+  // Income categories
   'Income': '#16a34a',
+  'Salary': '#16a34a',
+  'Benefits': '#22d3ee',
+  'Refunds': '#34d399',
+  'Other Income': '#86efac',
   'Other': '#a1a1aa',
 };
 

@@ -10,14 +10,27 @@ export interface Transaction {
   subcategory?: string;
   merchantName?: string;
   isRecurring: boolean;
+  isEssential?: boolean; // true = need, false = want
   accountName?: string;
+  source?: 'natwest' | 'amex' | 'universal'; // which parser was used
+  categorySource?: 'rule' | 'ai' | 'manual'; // how category was assigned
+  userNote?: string; // e.g., "Health Express = Mounjaro for Larissa"
 }
 
 export interface CategoryRule {
   pattern: string;
   category: string;
   subcategory?: string;
+  isEssential?: boolean;
   source: 'manual' | 'ai' | 'system';
+  note?: string; // user explanation
+}
+
+export interface SavingsTarget {
+  id: string;
+  month: string; // YYYY-MM
+  targetAmount: number; // pence
+  description?: string;
 }
 
 export interface Insight {
@@ -36,11 +49,14 @@ export interface MonthlyBreakdown {
   income: number; // pence
   spending: number; // pence
   net: number; // pence
+  essentialSpend: number; // pence
+  discretionarySpend: number; // pence
   byCategory: Record<string, number>;
 }
 
 export type CategoryName =
   | 'Housing'
+  | 'Rent / Mortgage'
   | 'Groceries'
   | 'Dining Out'
   | 'Transport'
@@ -48,13 +64,26 @@ export type CategoryName =
   | 'Shopping'
   | 'Entertainment'
   | 'Health & Fitness'
+  | 'Healthcare'
   | 'Utilities'
+  | 'Phone & Internet'
   | 'Insurance'
   | 'Personal Care'
   | 'Education'
+  | 'Childcare & Education'
   | 'Gifts & Donations'
+  | 'Charity'
   | 'Travel & Holidays'
+  | 'Holidays & Travel'
+  | 'Drinks & Nights Out'
   | 'Cash Withdrawals'
   | 'Transfers'
+  | 'Savings & Investments'
+  | 'Debt Repayments'
+  | 'Bank Charges'
   | 'Income'
+  | 'Salary'
+  | 'Benefits'
+  | 'Refunds'
+  | 'Other Income'
   | 'Other';

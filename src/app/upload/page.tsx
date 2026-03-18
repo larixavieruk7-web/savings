@@ -1,12 +1,20 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Upload, FileText, AlertCircle, CheckCircle2, Plus } from 'lucide-react';
+import {
+  Upload,
+  FileText,
+  AlertCircle,
+  CheckCircle2,
+  Plus,
+  Brain,
+  Loader2,
+} from 'lucide-react';
 import { parseNatWestCSV } from '@/lib/csv/natwest';
 import { formatGBP } from '@/lib/utils';
 import { CATEGORY_COLORS } from '@/lib/categories';
 import { useTransactionContext } from '@/context/transactions';
-import type { CategoryName } from '@/types';
+import type { Transaction, CategoryName } from '@/types';
 
 interface ImportResult {
   fileName: string;
@@ -17,57 +25,126 @@ interface ImportResult {
 }
 
 export default function UploadPage() {
-  const { addTransactions, transactions: existingTransactions } = useTransactionContext();
+  const { addTransactions, transactions: existingTransactions } =
+    useTransactionContext();
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isCategorizing, setIsCategorizing] = useState(false);
   const [lastImport, setLastImport] = useState<ImportResult | null>(null);
 
-  const handleFile = useCallback((file: File) => {
-    if (!file.name.endsWith('.csv')) {
-      setLastImport({
-        fileName: file.name,
-        totalParsed: 0,
-        newAdded: 0,
-        duplicatesSkipped: 0,
-        errors: ['Please upload a CSV file'],
-      });
-      return;
-    }
+  const categorizeWithAI = useCallback(
+    async (transactions: Transaction[]) => {
+      // Only categorize uncategorized (Other) spending transactions
+      const uncategorized = transactions.filter(
+        (t) => t.category === 'Other' && t.amount < 0
+      );
+      if (uncategorized.length === 0) return;
 
-    setIsProcessing(true);
+      setIsCategorizing(true);
+      try {
+        const response = await fetch('/api/categorize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            transactions: uncategorized.map((t) => ({
+              id: t.id,
+              description: t.description,
+              amount: t.amount / 100, // API expects pounds
+              merchant: t.merchantName,
+            })),
+          }),
+        });
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const csv = e.target?.result as string;
-      const result = parseNatWestCSV(csv);
+        if (response.ok) {
+          const { results } = await response.json();
+          // Update transactions in storage with AI categories
+          const allTxns = [...existingTransactions, ...transactions];
+          const resultMap = new Map<string, { id: string; category: string; isEssential: boolean }>(
+            results.map((r: { id: string; category: string; isEssential: boolean }) => [
+              r.id,
+              r,
+            ])
+          );
 
-      // Auto-save immediately
-      const countBefore = existingTransactions.length;
-      const merged = addTransactions(result.transactions);
-      const newAdded = merged.length - countBefore;
-      const duplicatesSkipped = result.transactions.length - newAdded;
+          const updates = allTxns.map((t) => {
+            const aiResult = resultMap.get(t.id);
+            if (aiResult && aiResult.category) {
+              return {
+                ...t,
+                category: aiResult.category,
+                isEssential: aiResult.isEssential,
+                categorySource: 'ai' as const,
+              };
+            }
+            return t;
+          });
 
-      setLastImport({
-        fileName: file.name,
-        totalParsed: result.transactions.length,
-        newAdded,
-        duplicatesSkipped,
-        errors: result.errors,
-      });
-      setIsProcessing(false);
-    };
-    reader.onerror = () => {
-      setLastImport({
-        fileName: file.name,
-        totalParsed: 0,
-        newAdded: 0,
-        duplicatesSkipped: 0,
-        errors: ['Failed to read file'],
-      });
-      setIsProcessing(false);
-    };
-    reader.readAsText(file);
-  }, [addTransactions, existingTransactions.length]);
+          addTransactions(updates);
+        }
+      } catch (err) {
+        console.error('AI categorization failed:', err);
+      }
+      setIsCategorizing(false);
+    },
+    [addTransactions, existingTransactions]
+  );
+
+  const handleFile = useCallback(
+    (file: File) => {
+      if (!file.name.endsWith('.csv')) {
+        setLastImport({
+          fileName: file.name,
+          totalParsed: 0,
+          newAdded: 0,
+          duplicatesSkipped: 0,
+          errors: ['Please upload a CSV file'],
+        });
+        return;
+      }
+
+      setIsProcessing(true);
+
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const csv = e.target?.result as string;
+
+        // Use our NatWest parser first (handles the known format)
+        const result = parseNatWestCSV(csv);
+
+        // Auto-save immediately
+        const countBefore = existingTransactions.length;
+        const merged = addTransactions(result.transactions);
+        const newAdded = merged.length - countBefore;
+        const duplicatesSkipped = result.transactions.length - newAdded;
+
+        setLastImport({
+          fileName: file.name,
+          totalParsed: result.transactions.length,
+          newAdded,
+          duplicatesSkipped,
+          errors: result.errors,
+        });
+        setIsProcessing(false);
+
+        // Trigger AI categorization for uncategorized transactions
+        if (newAdded > 0) {
+          categorizeWithAI(result.transactions);
+        }
+      };
+      reader.onerror = () => {
+        setLastImport({
+          fileName: file.name,
+          totalParsed: 0,
+          newAdded: 0,
+          duplicatesSkipped: 0,
+          errors: ['Failed to read file'],
+        });
+        setIsProcessing(false);
+      };
+      reader.readAsText(file);
+    },
+    [addTransactions, existingTransactions.length, categorizeWithAI]
+  );
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -83,7 +160,6 @@ export default function UploadPage() {
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) handleFile(file);
-      // Reset input so the same file can be re-selected
       e.target.value = '';
     },
     [handleFile]
@@ -97,14 +173,15 @@ export default function UploadPage() {
     .filter((t) => t.amount < 0)
     .reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
-  // Accounts summary
-  const accountCounts = existingTransactions.reduce<Record<string, number>>((acc, t) => {
-    const name = t.accountName || 'Unknown';
-    acc[name] = (acc[name] || 0) + 1;
-    return acc;
-  }, {});
+  const accountCounts = existingTransactions.reduce<Record<string, number>>(
+    (acc, t) => {
+      const name = t.accountName || 'Unknown';
+      acc[name] = (acc[name] || 0) + 1;
+      return acc;
+    },
+    {}
+  );
 
-  // Category breakdown of all stored data
   const categoryBreakdown = existingTransactions
     .filter((t) => t.amount < 0)
     .reduce<Record<string, number>>((acc, t) => {
@@ -115,16 +192,26 @@ export default function UploadPage() {
     ([, a], [, b]) => b - a
   );
 
+  // Count AI-categorized vs rule-based
+  const aiCategorized = existingTransactions.filter(
+    (t) => t.categorySource === 'ai'
+  ).length;
+  const uncategorized = existingTransactions.filter(
+    (t) => t.category === 'Other' && t.amount < 0
+  ).length;
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-foreground">Upload Statements</h1>
+        <h1 className="text-3xl font-bold text-foreground">
+          Upload Statements
+        </h1>
         <p className="text-muted mt-1">
           Import bank statement CSVs — duplicates are automatically skipped
         </p>
       </div>
 
-      {/* Drop Zone — always visible */}
+      {/* Drop Zone */}
       <div
         onDragOver={(e) => {
           e.preventDefault();
@@ -144,10 +231,14 @@ export default function UploadPage() {
           }`}
         />
         <h2 className="text-lg font-semibold text-foreground mb-1">
-          {isProcessing ? 'Processing...' : 'Drop your CSV here'}
+          {isProcessing
+            ? 'Processing...'
+            : isCategorizing
+            ? 'AI is categorizing your transactions...'
+            : 'Drop your CSV here'}
         </h2>
         <p className="text-sm text-muted mb-3">
-          NatWest format supported · Amex coming soon
+          NatWest supported · Amex coming soon · AI auto-categorizes
         </p>
         <label className="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer">
           <Plus className="h-4 w-4" />
@@ -161,13 +252,30 @@ export default function UploadPage() {
         </label>
       </div>
 
+      {/* AI Categorization Status */}
+      {isCategorizing && (
+        <div className="bg-accent/10 border border-accent/30 rounded-xl p-4 flex items-center gap-3">
+          <Loader2 className="h-5 w-5 text-accent animate-spin" />
+          <div>
+            <p className="font-medium text-foreground">
+              AI is categorizing transactions...
+            </p>
+            <p className="text-sm text-muted">
+              Using GPT-4o to classify spending as essential/discretionary
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Last Import Result */}
       {lastImport && (
-        <div className={`border rounded-xl p-4 ${
-          lastImport.errors.length > 0 && lastImport.newAdded === 0
-            ? 'bg-danger/10 border-danger/30'
-            : 'bg-success/10 border-success/30'
-        }`}>
+        <div
+          className={`border rounded-xl p-4 ${
+            lastImport.errors.length > 0 && lastImport.newAdded === 0
+              ? 'bg-danger/10 border-danger/30'
+              : 'bg-success/10 border-success/30'
+          }`}
+        >
           <div className="flex items-center gap-2 mb-2">
             {lastImport.newAdded > 0 ? (
               <CheckCircle2 className="h-5 w-5 text-success" />
@@ -180,14 +288,23 @@ export default function UploadPage() {
           </div>
           <div className="flex flex-wrap gap-4 text-sm">
             <span className="text-muted">
-              Parsed: <span className="text-foreground font-medium">{lastImport.totalParsed.toLocaleString()}</span>
+              Parsed:{' '}
+              <span className="text-foreground font-medium">
+                {lastImport.totalParsed.toLocaleString()}
+              </span>
             </span>
             <span className="text-success">
-              New: <span className="font-medium">+{lastImport.newAdded.toLocaleString()}</span>
+              New:{' '}
+              <span className="font-medium">
+                +{lastImport.newAdded.toLocaleString()}
+              </span>
             </span>
             {lastImport.duplicatesSkipped > 0 && (
               <span className="text-muted">
-                Duplicates skipped: <span className="font-medium">{lastImport.duplicatesSkipped.toLocaleString()}</span>
+                Duplicates skipped:{' '}
+                <span className="font-medium">
+                  {lastImport.duplicatesSkipped.toLocaleString()}
+                </span>
               </span>
             )}
           </div>
@@ -207,8 +324,7 @@ export default function UploadPage() {
       {/* Stored Data Summary */}
       {existingTransactions.length > 0 && (
         <>
-          {/* Overview Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-card border border-card-border rounded-xl p-5">
               <p className="text-sm text-muted mb-1">Total Transactions</p>
               <p className="text-2xl font-bold text-foreground">
@@ -217,11 +333,29 @@ export default function UploadPage() {
             </div>
             <div className="bg-card border border-card-border rounded-xl p-5">
               <p className="text-sm text-muted mb-1">Total Income</p>
-              <p className="text-2xl font-bold text-success">{formatGBP(totalIncome)}</p>
+              <p className="text-2xl font-bold text-success">
+                {formatGBP(totalIncome)}
+              </p>
             </div>
             <div className="bg-card border border-card-border rounded-xl p-5">
               <p className="text-sm text-muted mb-1">Total Spending</p>
-              <p className="text-2xl font-bold text-danger">{formatGBP(totalSpending)}</p>
+              <p className="text-2xl font-bold text-danger">
+                {formatGBP(totalSpending)}
+              </p>
+            </div>
+            <div className="bg-card border border-card-border rounded-xl p-5">
+              <p className="text-sm text-muted mb-1">AI Categorized</p>
+              <div className="flex items-center gap-2">
+                <Brain className="h-5 w-5 text-accent" />
+                <p className="text-2xl font-bold text-accent">
+                  {aiCategorized}
+                </p>
+              </div>
+              {uncategorized > 0 && (
+                <p className="text-xs text-warning mt-1">
+                  {uncategorized} still uncategorized
+                </p>
+              )}
             </div>
           </div>
 
@@ -238,7 +372,9 @@ export default function UploadPage() {
                     key={name}
                     className="flex items-center justify-between px-3 py-2 rounded-lg border border-card-border"
                   >
-                    <span className="text-sm text-foreground truncate">{name}</span>
+                    <span className="text-sm text-foreground truncate">
+                      {name}
+                    </span>
                     <span className="text-xs text-muted ml-2 shrink-0">
                       {count.toLocaleString()} txns
                     </span>
@@ -255,23 +391,36 @@ export default function UploadPage() {
             <div className="space-y-2.5">
               {sortedCategories.map(([category, amount]) => {
                 const pct = (amount / totalSpending) * 100;
-                const color = CATEGORY_COLORS[category as CategoryName] || '#a1a1aa';
+                const color =
+                  CATEGORY_COLORS[category as CategoryName] || '#a1a1aa';
                 return (
                   <div key={category}>
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
-                        <span className="text-sm text-foreground">{category}</span>
+                        <div
+                          className="w-2.5 h-2.5 rounded-full"
+                          style={{ backgroundColor: color }}
+                        />
+                        <span className="text-sm text-foreground">
+                          {category}
+                        </span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="text-xs text-muted">{pct.toFixed(1)}%</span>
-                        <span className="text-sm font-medium text-foreground">{formatGBP(amount)}</span>
+                        <span className="text-xs text-muted">
+                          {pct.toFixed(1)}%
+                        </span>
+                        <span className="text-sm font-medium text-foreground">
+                          {formatGBP(amount)}
+                        </span>
                       </div>
                     </div>
                     <div className="h-1.5 bg-card-border rounded-full overflow-hidden">
                       <div
                         className="h-full rounded-full"
-                        style={{ width: `${pct}%`, backgroundColor: color }}
+                        style={{
+                          width: `${pct}%`,
+                          backgroundColor: color,
+                        }}
                       />
                     </div>
                   </div>
