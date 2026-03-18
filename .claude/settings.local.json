@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git init:*)",
+      "Bash(git config:*)",
+      "Bash(git remote:*)",
+      "Bash(npx:*)",
+      "Bash(shopt -s dotglob)",
+      "Bash(mv temp_next/* .)",
+      "Bash(rm -rf temp_next)",
+      "Bash(npm install:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}
