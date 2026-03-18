@@ -1,11 +1,13 @@
 'use client';
 
-import { Upload, TrendingUp, Brain, TrendingDown, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Upload, TrendingUp, Brain, TrendingDown, ArrowUpRight, ArrowDownRight, Target, ShieldCheck, Sparkles, PiggyBank } from 'lucide-react';
 import Link from 'next/link';
 import { useTransactionContext } from '@/context/transactions';
 import { formatGBP, formatChange, gbpTooltipFormatter } from '@/lib/utils';
 import { CATEGORY_COLORS } from '@/lib/categories';
-import type { CategoryName } from '@/types';
+import { getSavingsTargets, saveSavingsTargets } from '@/lib/storage';
+import type { CategoryName, SavingsTarget } from '@/types';
 import {
   PieChart,
   Pie,
@@ -26,6 +28,8 @@ export default function DashboardHome() {
     loaded,
     totalIncome,
     totalSpending,
+    essentialSpending,
+    discretionarySpending,
     categoryBreakdown,
     monthlyBreakdowns,
     dateRange,
@@ -226,6 +230,25 @@ export default function DashboardHome() {
           })}
         </div>
       </div>
+
+      {/* Essential vs Discretionary Split */}
+      <EssentialVsDiscretionary
+        essentialSpending={essentialSpending}
+        discretionarySpending={discretionarySpending}
+        totalSpending={totalSpending}
+      />
+
+      {/* Monthly Savings Target Progress */}
+      <SavingsTargetProgress
+        monthlyBreakdowns={monthlyBreakdowns}
+      />
+
+      {/* 50/30/20 Budget Rule */}
+      <BudgetRuleIndicator
+        totalIncome={totalIncome}
+        essentialSpending={essentialSpending}
+        discretionarySpending={discretionarySpending}
+      />
     </div>
   );
 }
@@ -257,6 +280,321 @@ function KpiCard({
           <span className="text-xs text-muted">{change} vs prev month</span>
         </div>
       )}
+    </div>
+  );
+}
+
+function EssentialVsDiscretionary({
+  essentialSpending,
+  discretionarySpending,
+  totalSpending,
+}: {
+  essentialSpending: number;
+  discretionarySpending: number;
+  totalSpending: number;
+}) {
+  const essentialPct = totalSpending > 0 ? (essentialSpending / totalSpending) * 100 : 0;
+  const discretionaryPct = totalSpending > 0 ? (discretionarySpending / totalSpending) * 100 : 0;
+
+  return (
+    <div className="bg-card border border-card-border rounded-xl p-6">
+      <div className="flex items-center gap-2 mb-4">
+        <ShieldCheck className="h-5 w-5 text-accent" />
+        <h3 className="text-lg font-semibold text-foreground">
+          Essential vs Discretionary
+        </h3>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+        <div className="bg-[#111118] rounded-lg p-4 border border-card-border">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#3b82f6' }} />
+            <span className="text-sm text-muted">Essential (Needs)</span>
+          </div>
+          <p className="text-2xl font-bold text-foreground">{formatGBP(essentialSpending)}</p>
+          <p className="text-sm text-muted mt-1">{essentialPct.toFixed(1)}% of spending</p>
+        </div>
+        <div className="bg-[#111118] rounded-lg p-4 border border-card-border">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#f59e0b' }} />
+            <span className="text-sm text-muted">Discretionary (Wants)</span>
+          </div>
+          <p className="text-2xl font-bold text-foreground">{formatGBP(discretionarySpending)}</p>
+          <p className="text-sm text-muted mt-1">{discretionaryPct.toFixed(1)}% of spending</p>
+        </div>
+      </div>
+      {/* Stacked horizontal bar */}
+      <div className="space-y-2">
+        <div className="h-6 rounded-full overflow-hidden flex bg-card-border">
+          {essentialPct > 0 && (
+            <div
+              className="h-full flex items-center justify-center text-xs font-medium text-white transition-all duration-500"
+              style={{ width: `${essentialPct}%`, backgroundColor: '#3b82f6' }}
+            >
+              {essentialPct >= 10 ? `${essentialPct.toFixed(0)}%` : ''}
+            </div>
+          )}
+          {discretionaryPct > 0 && (
+            <div
+              className="h-full flex items-center justify-center text-xs font-medium text-white transition-all duration-500"
+              style={{ width: `${discretionaryPct}%`, backgroundColor: '#f59e0b' }}
+            >
+              {discretionaryPct >= 10 ? `${discretionaryPct.toFixed(0)}%` : ''}
+            </div>
+          )}
+        </div>
+        <div className="flex items-center justify-center gap-6 text-xs text-muted">
+          <span className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#3b82f6' }} />
+            Essential
+          </span>
+          <span className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#f59e0b' }} />
+            Discretionary
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SavingsTargetProgress({
+  monthlyBreakdowns,
+}: {
+  monthlyBreakdowns: { month: string; income: number; spending: number; net: number }[];
+}) {
+  const [targets, setTargets] = useState<SavingsTarget[]>([]);
+  const [inputValue, setInputValue] = useState('300');
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    setTargets(getSavingsTargets());
+    setLoaded(true);
+  }, []);
+
+  const currentMonthKey = format(new Date(), 'yyyy-MM');
+  const currentMonthData = monthlyBreakdowns.find((m) => m.month === currentMonthKey);
+  const actualNet = currentMonthData ? currentMonthData.net : 0;
+
+  const currentTarget = targets.find((t) => t.month === currentMonthKey);
+
+  const handleSetTarget = useCallback(() => {
+    const amount = Math.round(parseFloat(inputValue) * 100);
+    if (isNaN(amount) || amount <= 0) return;
+    const newTarget: SavingsTarget = {
+      id: `target-${currentMonthKey}`,
+      month: currentMonthKey,
+      targetAmount: amount,
+    };
+    const updated = [...targets.filter((t) => t.month !== currentMonthKey), newTarget];
+    saveSavingsTargets(updated);
+    setTargets(updated);
+  }, [inputValue, currentMonthKey, targets]);
+
+  if (!loaded) return null;
+
+  const targetAmount = currentTarget ? currentTarget.targetAmount : 0;
+  const progressPct = targetAmount > 0 ? Math.min((actualNet / targetAmount) * 100, 100) : 0;
+  const onTrack = actualNet >= targetAmount;
+
+  return (
+    <div className="bg-card border border-card-border rounded-xl p-6">
+      <div className="flex items-center gap-2 mb-4">
+        <Target className="h-5 w-5 text-accent" />
+        <h3 className="text-lg font-semibold text-foreground">
+          Savings Target — {format(new Date(), 'MMMM yyyy')}
+        </h3>
+      </div>
+
+      {!currentTarget ? (
+        <div className="space-y-3">
+          <p className="text-sm text-muted">
+            No savings target set for this month. Set one to track your progress.
+          </p>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1">
+              <span className="text-foreground font-medium">£</span>
+              <input
+                type="number"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                className="w-28 bg-[#111118] border border-card-border rounded-lg px-3 py-2 text-foreground text-sm focus:outline-none focus:border-accent"
+                placeholder="300"
+                min="0"
+                step="50"
+              />
+            </div>
+            <button
+              onClick={handleSetTarget}
+              className="bg-accent hover:bg-accent-hover text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              Set Target
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-sm text-muted mb-1">Target</p>
+              <p className="text-xl font-bold text-foreground">{formatGBP(targetAmount)}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted mb-1">Actual Net Savings</p>
+              <p className={`text-xl font-bold ${actualNet >= 0 ? 'text-success' : 'text-danger'}`}>
+                {formatGBP(actualNet)}
+              </p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted">Progress</span>
+              <span className={onTrack ? 'text-success' : 'text-danger'}>
+                {actualNet > 0 ? progressPct.toFixed(0) : 0}%
+              </span>
+            </div>
+            <div className="h-4 bg-card-border rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{
+                  width: `${actualNet > 0 ? progressPct : 0}%`,
+                  backgroundColor: onTrack ? '#22c55e' : '#ef4444',
+                }}
+              />
+            </div>
+            <p className="text-xs text-muted">
+              {onTrack
+                ? `On track! You've met your savings target this month.`
+                : `${formatGBP(Math.max(targetAmount - actualNet, 0))} more to reach your target.`}
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BudgetRuleIndicator({
+  totalIncome,
+  essentialSpending,
+  discretionarySpending,
+}: {
+  totalIncome: number;
+  essentialSpending: number;
+  discretionarySpending: number;
+}) {
+  const actualSavings = totalIncome - essentialSpending - discretionarySpending;
+
+  const recommended = {
+    needs: totalIncome * 0.5,
+    wants: totalIncome * 0.3,
+    savings: totalIncome * 0.2,
+  };
+
+  const actual = {
+    needs: essentialSpending,
+    wants: discretionarySpending,
+    savings: Math.max(actualSavings, 0),
+  };
+
+  const pct = {
+    needs: totalIncome > 0 ? (actual.needs / totalIncome) * 100 : 0,
+    wants: totalIncome > 0 ? (actual.wants / totalIncome) * 100 : 0,
+    savings: totalIncome > 0 ? (actualSavings / totalIncome) * 100 : 0,
+  };
+
+  const rows: {
+    label: string;
+    targetPct: number;
+    actualPct: number;
+    recommended: number;
+    actual: number;
+    color: string;
+    icon: typeof ShieldCheck;
+  }[] = [
+    {
+      label: 'Needs (Essential)',
+      targetPct: 50,
+      actualPct: pct.needs,
+      recommended: recommended.needs,
+      actual: actual.needs,
+      color: '#3b82f6',
+      icon: ShieldCheck,
+    },
+    {
+      label: 'Wants (Discretionary)',
+      targetPct: 30,
+      actualPct: pct.wants,
+      recommended: recommended.wants,
+      actual: actual.wants,
+      color: '#f59e0b',
+      icon: Sparkles,
+    },
+    {
+      label: 'Savings',
+      targetPct: 20,
+      actualPct: pct.savings,
+      recommended: recommended.savings,
+      actual: actual.savings,
+      color: '#22c55e',
+      icon: PiggyBank,
+    },
+  ];
+
+  return (
+    <div className="bg-card border border-card-border rounded-xl p-6">
+      <div className="flex items-center gap-2 mb-2">
+        <PiggyBank className="h-5 w-5 text-accent" />
+        <h3 className="text-lg font-semibold text-foreground">50 / 30 / 20 Budget Rule</h3>
+      </div>
+      <p className="text-sm text-muted mb-5">
+        Based on your total income of {formatGBP(totalIncome)}
+      </p>
+      <div className="space-y-5">
+        {rows.map((row) => {
+          const overBudget =
+            row.label === 'Savings'
+              ? row.actualPct < row.targetPct
+              : row.actualPct > row.targetPct;
+          const Icon = row.icon;
+          return (
+            <div key={row.label} className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Icon className="h-4 w-4" style={{ color: row.color }} />
+                  <span className="text-sm font-medium text-foreground">{row.label}</span>
+                  <span className="text-xs text-muted">({row.targetPct}% target)</span>
+                </div>
+                <span className={`text-sm font-medium ${overBudget ? 'text-danger' : 'text-success'}`}>
+                  {row.actualPct.toFixed(1)}%
+                </span>
+              </div>
+              <div className="h-3 bg-card-border rounded-full overflow-hidden relative">
+                {/* Target marker */}
+                <div
+                  className="absolute top-0 h-full w-0.5 bg-white/40 z-10"
+                  style={{ left: `${row.targetPct}%` }}
+                />
+                <div
+                  className="h-full rounded-full transition-all duration-500"
+                  style={{
+                    width: `${Math.min(row.actualPct, 100)}%`,
+                    backgroundColor: row.color,
+                    opacity: overBudget ? 0.7 : 1,
+                  }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-xs text-muted">
+                <span>
+                  Recommended: {formatGBP(row.recommended)}
+                </span>
+                <span>
+                  Actual: <span className={overBudget ? 'text-danger' : 'text-success'}>{formatGBP(row.actual)}</span>
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

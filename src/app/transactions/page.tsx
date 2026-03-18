@@ -3,17 +3,16 @@
 import { useState, useMemo } from 'react';
 import { useTransactionContext } from '@/context/transactions';
 import { formatGBP } from '@/lib/utils';
-import { CATEGORY_COLORS } from '@/lib/categories';
-import type { CategoryName } from '@/types';
 import { format, parseISO } from 'date-fns';
 import { Search, Filter, Upload, ArrowUpDown } from 'lucide-react';
 import Link from 'next/link';
+import { CategoryEditor } from '@/components/CategoryEditor';
 
 type SortField = 'date' | 'amount' | 'category' | 'description';
 type SortDir = 'asc' | 'desc';
 
 export default function TransactionsPage() {
-  const { transactions, loaded } = useTransactionContext();
+  const { transactions, loaded, reload } = useTransactionContext();
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [sortField, setSortField] = useState<SortField>('date');
@@ -209,15 +208,7 @@ export default function TransactionsPage() {
                     {t.description}
                   </td>
                   <td className="p-3">
-                    <span
-                      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium"
-                      style={{
-                        backgroundColor: `${CATEGORY_COLORS[t.category as CategoryName] || '#a1a1aa'}20`,
-                        color: CATEGORY_COLORS[t.category as CategoryName] || '#a1a1aa',
-                      }}
-                    >
-                      {t.category}
-                    </span>
+                    <CategoryEditor transaction={t} onSaved={reload} />
                   </td>
                   <td className={`p-3 text-right font-mono ${t.amount >= 0 ? 'text-success' : 'text-danger'}`}>
                     {t.amount >= 0 ? '+' : '-'}{formatGBP(Math.abs(t.amount))}
