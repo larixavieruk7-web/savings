@@ -283,7 +283,9 @@ export default function AskPage() {
               Ask About Your Finances
             </h2>
             <p className="text-sm text-muted">
-              {hasData
+              {!loaded
+                ? 'Loading...'
+                : hasData
                 ? `Powered by AI with ${transactions.length} transactions loaded`
                 : 'Upload bank statements first to get personalized insights'}
             </p>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   getTransactions,
   mergeTransactions,
@@ -27,46 +27,26 @@ function getPeriodStartDate(period: PeriodOption): Date | null {
   }
 }
 
-// Cache parsed transactions in module scope to avoid re-parsing JSON on every navigation
-let _cachedTransactions: Transaction[] | null = null;
-let _cacheVersion = 0;
-
-function getCachedTransactions(): Transaction[] {
-  if (_cachedTransactions === null) {
-    _cachedTransactions = getTransactions();
-  }
-  return _cachedTransactions;
-}
-
-function invalidateCache() {
-  _cachedTransactions = null;
-  _cacheVersion++;
-}
-
 export function useTransactions() {
-  const [allTransactions, setAllTransactions] = useState<Transaction[]>(() => {
-    if (typeof window === 'undefined') return [];
-    return getCachedTransactions();
-  });
-  const [loaded, setLoaded] = useState(() => typeof window !== 'undefined');
+  const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [period, setPeriod] = useState<PeriodOption>('last30');
+  const loadedRef = useRef(false);
 
   useEffect(() => {
-    if (!loaded) {
-      setAllTransactions(getCachedTransactions());
+    if (!loadedRef.current) {
+      loadedRef.current = true;
+      setAllTransactions(getTransactions());
       setLoaded(true);
     }
-  }, [loaded]);
+  }, []);
 
   const reload = useCallback(() => {
-    invalidateCache();
-    setAllTransactions(getCachedTransactions());
+    setAllTransactions(getTransactions());
   }, []);
 
   const addTransactions = useCallback((incoming: Transaction[]) => {
     const merged = mergeTransactions(incoming);
-    invalidateCache();
-    _cachedTransactions = merged;
     setAllTransactions(merged);
     return merged;
   }, []);
@@ -74,8 +54,6 @@ export function useTransactions() {
   const updateMany = useCallback(
     (updates: (Partial<Transaction> & { id: string })[]) => {
       const updated = updateTransactions(updates);
-      invalidateCache();
-      _cachedTransactions = updated;
       setAllTransactions(updated);
       return updated;
     },
@@ -89,9 +67,7 @@ export function useTransactions() {
       if (idx >= 0) {
         all[idx] = { ...all[idx], ...changes };
         saveTransactions(all);
-        invalidateCache();
-        _cachedTransactions = [...all];
-        setAllTransactions(_cachedTransactions);
+        setAllTransactions([...all]);
       }
     },
     []
@@ -99,7 +75,6 @@ export function useTransactions() {
 
   const clear = useCallback(() => {
     clearTransactions();
-    invalidateCache();
     setAllTransactions([]);
   }, []);
 
@@ -214,7 +189,6 @@ export function useTransactions() {
     return { from: dates[0], to: dates[dates.length - 1] };
   }, [filteredTransactions]);
 
-  // Uncategorized count (transactions needing attention)
   const uncategorizedCount = useMemo(
     () => filteredTransactions.filter((t) => t.category === 'Other' && t.amount < 0).length,
     [filteredTransactions]
