@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Claude Code local settings (keep commands committed for cross-device sync)
+.claude/*
+!.claude/commands/
