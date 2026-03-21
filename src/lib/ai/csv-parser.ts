@@ -76,7 +76,7 @@ async function detectColumns(headers: string[], sampleRows: string[][]): Promise
 
   const response = await withRetry(
     () => getOpenAI().chat.completions.create({
-      model: 'gpt-4o',
+      model: 'gpt-5-mini',
       temperature: 0,
       response_format: { type: 'json_object' },
       messages: [

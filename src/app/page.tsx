@@ -9,6 +9,8 @@ import { CATEGORY_COLORS } from '@/lib/categories';
 import { getSavingsTargets, saveSavingsTargets } from '@/lib/storage';
 import type { CategoryName, SavingsTarget, Transaction } from '@/types';
 import { PeriodSelector } from '@/components/dashboard/period-selector';
+import { DuplicateSubscriptionAlert } from '@/components/subscriptions/DuplicateSubscriptionAlert';
+import { computeSubscriptionData } from '@/lib/subscriptions';
 import {
   PieChart,
   Pie,
@@ -50,6 +52,7 @@ export default function DashboardHome() {
 
   const net = totalIncome - totalSpending;
   const savingsRate = totalIncome > 0 ? (net / totalIncome) * 100 : 0;
+  const { potentialDuplicates } = computeSubscriptionData(transactions);
 
   // Month-over-month comparison
   const currentMonth = monthlyBreakdowns[monthlyBreakdowns.length - 1];
@@ -98,6 +101,9 @@ export default function DashboardHome() {
           <PeriodSelector />
         </div>
       </div>
+
+      {/* Duplicate subscription warning */}
+      <DuplicateSubscriptionAlert duplicates={potentialDuplicates} />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

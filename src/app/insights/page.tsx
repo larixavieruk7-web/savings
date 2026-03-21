@@ -22,6 +22,8 @@ import {
 import Link from 'next/link';
 import { getCachedInsights, cacheInsights, getSavingsTargets, saveSavingsTargets } from '@/lib/storage';
 import type { SavingsTarget } from '@/types';
+import { SubscriptionsPanel } from '@/components/subscriptions/SubscriptionsPanel';
+import { computeSubscriptionData } from '@/lib/subscriptions';
 
 interface Anomaly {
   transactionId: string;
@@ -150,6 +152,8 @@ export default function InsightsPage() {
     0
   );
 
+  const { potentialDuplicates, recurringMerchants } = computeSubscriptionData(transactions);
+
   if (!loaded) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -209,6 +213,12 @@ export default function InsightsPage() {
           {error}
         </div>
       )}
+
+      {/* Subscriptions & Duplicates — always shown, no AI needed */}
+      <SubscriptionsPanel
+        potentialDuplicates={potentialDuplicates}
+        recurringMerchants={recurringMerchants}
+      />
 
       {/* Savings Target */}
       <div className="bg-card border border-card-border rounded-xl p-5">

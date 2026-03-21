@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, MessageCircle, Sparkles, Bot, User } from 'lucide-react';
 import { useTransactionContext } from '@/context/transactions';
 import { getKnowledgeEntries, getAccountNicknames } from '@/lib/storage';
+import { computeSubscriptionData } from '@/lib/subscriptions';
 import { formatGBP } from '@/lib/utils';
 
 interface ChatMessage {
@@ -142,6 +143,17 @@ export default function AskPage() {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
+  const buildRecurringByAccount = useCallback(() => {
+    const { potentialDuplicates, recurringMerchants } = computeSubscriptionData(transactions);
+    return {
+      potentialDuplicateSubscriptions: potentialDuplicates.map((d) => ({
+        merchant: d.merchant,
+        accounts: d.accounts,
+      })),
+      recurringMerchants,
+    };
+  }, [transactions]);
+
   const buildContext = useCallback(() => {
     const knowledgeEntries = getKnowledgeEntries().map((e) => ({
       date: e.date,
@@ -174,6 +186,8 @@ export default function AskPage() {
       net: m.net,
     }));
 
+    const { potentialDuplicateSubscriptions, recurringMerchants } = buildRecurringByAccount();
+
     return {
       totalIncome,
       totalSpending,
@@ -184,6 +198,8 @@ export default function AskPage() {
       monthlyTotals,
       knowledgeEntries,
       accountNicknames,
+      potentialDuplicateSubscriptions,
+      recurringMerchants,
     };
   }, [
     categoryBreakdown,
@@ -193,6 +209,7 @@ export default function AskPage() {
     totalSpending,
     essentialSpending,
     discretionarySpending,
+    buildRecurringByAccount,
   ]);
 
   const sendMessage = useCallback(

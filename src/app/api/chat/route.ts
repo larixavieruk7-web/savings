@@ -8,16 +8,42 @@ function getOpenAI() {
   return _openai
 }
 
-const SYSTEM_PROMPT = `You are a personal finance advisor for a UK household (Larissa and Gus). You have access to their transaction data, spending patterns, and life events. Be specific with £ amounts. Give actionable advice. Be conversational and supportive.
+const SYSTEM_PROMPT = `You are a personal finance assistant built into Larissa and Gus's savings dashboard. You have direct access to their real transaction data — every answer must come from that data.
 
-Guidelines:
-- Always reference actual numbers from the data provided
-- Format currency as £X,XXX.XX
-- Use bullet points and bold text for clarity
-- When suggesting savings, be specific about which merchants or categories to target
-- Consider the knowledge bank entries for context about their life events and goals
-- If the data doesn't contain enough information to answer, say so honestly
-- Keep responses concise but thorough — aim for 150-300 words unless more detail is needed`
+HARD RULES — never break these:
+- NEVER suggest external apps, tools, or services (no Truebill, YNAB, Monzo, etc.) — you ARE the tool
+- NEVER give generic financial advice — every statement must reference specific numbers, merchants, or accounts from the data
+- NEVER say "I don't have enough information" if the data contains a relevant section — read the full context
+- If a question is about subscriptions or duplicates, check the "Potential Duplicate Subscriptions" and "All Recurring Payments" sections — they are pre-computed from all transactions
+- If data shows no duplicates, say exactly that: "I checked your transactions and found no merchants charging from multiple accounts"
+- Format all amounts as £X.XX using the exact figures from the data
+- Keep responses under 200 words — be direct, not thorough
+- Never pad with suggestions that aren't grounded in the actual data shown
+
+Context you have access to:
+- Pre-computed duplicate subscription detection (merchants recurring on 2+ accounts)
+- All recurring payments grouped by account
+- Top spending categories and merchants
+- Monthly income/spending/net breakdown
+- Knowledge bank (life events, goals, context)`
+
+interface RecurringAccountEntry {
+  account: string
+  monthCount: number
+  avgAmountPence: number
+}
+
+interface PotentialDuplicate {
+  merchant: string
+  accounts: RecurringAccountEntry[]
+}
+
+interface RecurringMerchant {
+  merchant: string
+  account: string
+  monthCount: number
+  avgAmountPence: number
+}
 
 interface ChatContext {
   categories?: { category: string; total: number }[]
@@ -29,13 +55,48 @@ interface ChatContext {
   totalSpending?: number
   essentialSpending?: number
   discretionarySpending?: number
+  potentialDuplicateSubscriptions?: PotentialDuplicate[]
+  recurringMerchants?: RecurringMerchant[]
 }
 
 function buildContextMessage(context: ChatContext): string {
   const parts: string[] = []
 
+  // --- SUBSCRIPTIONS FIRST (most specific, pre-computed) ---
+  if (context.potentialDuplicateSubscriptions !== undefined) {
+    if (context.potentialDuplicateSubscriptions.length > 0) {
+      parts.push('## DUPLICATE SUBSCRIPTIONS DETECTED')
+      parts.push('The following merchants are charging on MORE THAN ONE account:')
+      for (const d of context.potentialDuplicateSubscriptions) {
+        const accountLines = d.accounts.map(
+          (a) => `${a.account} (£${(a.avgAmountPence / 100).toFixed(2)}/mo, ${a.monthCount} months)`
+        )
+        parts.push(`- ${d.merchant}: ${accountLines.join(' AND ')}`)
+      }
+    } else {
+      parts.push('## Duplicate Subscriptions')
+      parts.push('CONFIRMED: No merchants found charging on more than one account.')
+    }
+  }
+
+  if (context.recurringMerchants && context.recurringMerchants.length > 0) {
+    parts.push('\n## All Recurring Payments by Account')
+    const byAccount: Record<string, RecurringMerchant[]> = {}
+    for (const r of context.recurringMerchants) {
+      if (!byAccount[r.account]) byAccount[r.account] = []
+      byAccount[r.account].push(r)
+    }
+    for (const [account, merchants] of Object.entries(byAccount)) {
+      parts.push(`\n### ${account}`)
+      for (const m of merchants) {
+        parts.push(`  - ${m.merchant}: £${(m.avgAmountPence / 100).toFixed(2)}/mo (${m.monthCount} months)`)
+      }
+    }
+  }
+
+  // --- SUMMARY ---
   if (context.totalIncome !== undefined || context.totalSpending !== undefined) {
-    parts.push('## Overall Summary')
+    parts.push('\n## Overall Summary')
     if (context.totalIncome !== undefined) parts.push(`- Total Income: £${(context.totalIncome / 100).toFixed(2)}`)
     if (context.totalSpending !== undefined) parts.push(`- Total Spending: £${(context.totalSpending / 100).toFixed(2)}`)
     if (context.essentialSpending !== undefined) parts.push(`- Essential Spending: £${(context.essentialSpending / 100).toFixed(2)}`)
@@ -71,7 +132,7 @@ function buildContextMessage(context: ChatContext): string {
   }
 
   if (context.knowledgeEntries && context.knowledgeEntries.length > 0) {
-    parts.push('\n## Knowledge Bank (Life Events & Context)')
+    parts.push('\n## Knowledge Bank')
     for (const e of context.knowledgeEntries) {
       const tags = e.tags && e.tags.length > 0 ? ` [${e.tags.join(', ')}]` : ''
       parts.push(`- [${e.date}] ${e.title}: ${e.description}${tags}`)
@@ -79,7 +140,7 @@ function buildContextMessage(context: ChatContext): string {
   }
 
   return parts.length > 0
-    ? `Here is the household's financial data:\n\n${parts.join('\n')}`
+    ? `HOUSEHOLD FINANCIAL DATA (answer only from this — do not add generic advice):\n\n${parts.join('\n')}`
     : 'No financial data is currently available. The user may need to upload bank statements first.'
 }
 
@@ -127,7 +188,7 @@ export async function POST(req: NextRequest) {
     const completion = await withRetry(
       () =>
         openai.chat.completions.create({
-          model: 'gpt-4o',
+          model: 'gpt-5',
           messages,
           temperature: 0.7,
           max_tokens: 1000,
