@@ -15,6 +15,11 @@
 - `'use client'` on ALL pages — everything uses localStorage which is client-only
 - Auto-save everything — no manual save buttons; write to localStorage immediately on change
 
+### Frontend Design Skill — INVOKE BEFORE WRITING UI
+Invoke the `frontend-design` skill in the MAIN conversation before writing frontend code for:
+new pages, new components, significant visual redesigns, or any non-trivial UI work.
+**Subagents cannot call skills** — invoke in the main conversation FIRST, then pass guidance to agents.
+
 ---
 
 ## DECISION TREES
