@@ -68,6 +68,19 @@ const AMEX_CATEGORY_MAP: Record<string, { category: string; isEssential: boolean
   'education-education': { category: 'Childcare & Education', isEssential: true },
   // Charity
   'charity-charity': { category: 'Charity', isEssential: false },
+  // Travel (additional)
+  'travel-lodging': { category: 'Holidays & Travel', isEssential: false },
+  'travel-rail services': { category: 'Transport', isEssential: true },
+  'travel-auto services': { category: 'Transport', isEssential: true },
+  // General retail / computer / government
+  'general purchases-general retail': { category: 'Shopping', isEssential: false },
+  'general purchases-computer supplies': { category: 'Subscriptions', isEssential: false },
+  'general purchases-government services': { category: 'Other', isEssential: true },
+  'general purchases-arts & jewellery': { category: 'Shopping', isEssential: false },
+  // Communications (alternate spelling from Amex)
+  'communications-mobile telecommunication': { category: 'Phone & Internet', isEssential: true },
+  // Miscellaneous
+  'miscellaneous-other': { category: 'Other', isEssential: false },
 };
 
 function mapAmexCategory(amexCat: string): { category: string; isEssential: boolean } | null {

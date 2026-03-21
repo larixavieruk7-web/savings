@@ -3,12 +3,10 @@
 import { useState, useCallback } from 'react';
 import {
   Upload,
-  FileText,
   AlertCircle,
   CheckCircle2,
   Plus,
   Brain,
-  Loader2,
 } from 'lucide-react';
 import { parseNatWestCSV, isNatWestFormat } from '@/lib/csv/natwest';
 import { parseAmexCSV, isAmexFormat } from '@/lib/csv/amex';
@@ -31,157 +29,138 @@ export default function UploadPage() {
     useTransactionContext();
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [isCategorizing, setIsCategorizing] = useState(false);
-  const [lastImport, setLastImport] = useState<ImportResult | null>(null);
+  const [importResults, setImportResults] = useState<ImportResult[]>([]);
 
-  const categorizeWithAI = useCallback(
-    async (transactions: Transaction[]) => {
-      // Only categorize uncategorized (Other) spending transactions
-      const uncategorized = transactions.filter(
-        (t) => t.category === 'Other' && t.amount < 0
-      );
-      if (uncategorized.length === 0) return;
-
-      setIsCategorizing(true);
-      try {
-        const response = await fetch('/api/categorize', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            transactions: uncategorized.map((t) => ({
-              id: t.id,
-              description: t.description,
-              amount: t.amount / 100, // API expects pounds
-              merchant: t.merchantName,
-            })),
-          }),
-        });
-
-        if (response.ok) {
-          const { results } = await response.json();
-          // Update transactions in storage with AI categories
-          const allTxns = [...existingTransactions, ...transactions];
-          const resultMap = new Map<string, { id: string; category: string; isEssential: boolean }>(
-            results.map((r: { id: string; category: string; isEssential: boolean }) => [
-              r.id,
-              r,
-            ])
-          );
-
-          const updates = allTxns.map((t) => {
-            const aiResult = resultMap.get(t.id);
-            if (aiResult && aiResult.category) {
-              return {
-                ...t,
-                category: aiResult.category,
-                isEssential: aiResult.isEssential,
-                categorySource: 'ai' as const,
-              };
-            }
-            return t;
+  const processFile = useCallback(
+    (file: File): Promise<{ result: ImportResult; transactions: Transaction[] }> => {
+      return new Promise((resolve) => {
+        if (!file.name.endsWith('.csv')) {
+          resolve({
+            result: {
+              fileName: file.name,
+              totalParsed: 0,
+              newAdded: 0,
+              duplicatesSkipped: 0,
+              errors: ['Please upload a CSV file'],
+            },
+            transactions: [],
           });
-
-          addTransactions(updates);
+          return;
         }
-      } catch (err) {
-        console.error('AI categorization failed:', err);
-      }
-      setIsCategorizing(false);
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const csv = e.target?.result as string;
+
+          const firstLine = csv.split('\n')[0] || '';
+          const headers = firstLine.split(',').map((h) => h.trim().replace(/^"|"$/g, ''));
+
+          let parsed: { transactions: Transaction[]; errors: string[] };
+          let detectedBank = 'Unknown';
+
+          if (isAmexFormat(headers)) {
+            parsed = parseAmexCSV(csv);
+            detectedBank = 'Amex';
+          } else if (isNatWestFormat(headers)) {
+            parsed = parseNatWestCSV(csv);
+            detectedBank = 'NatWest';
+          } else {
+            parsed = parseNatWestCSV(csv);
+            detectedBank = 'NatWest (assumed)';
+          }
+
+          resolve({
+            result: {
+              fileName: file.name,
+              totalParsed: parsed.transactions.length,
+              newAdded: 0, // will be calculated after merge
+              duplicatesSkipped: 0,
+              errors: parsed.errors,
+              bank: detectedBank,
+            },
+            transactions: parsed.transactions,
+          });
+        };
+        reader.onerror = () => {
+          resolve({
+            result: {
+              fileName: file.name,
+              totalParsed: 0,
+              newAdded: 0,
+              duplicatesSkipped: 0,
+              errors: ['Failed to read file'],
+            },
+            transactions: [],
+          });
+        };
+        reader.readAsText(file);
+      });
     },
-    [addTransactions, existingTransactions]
+    []
   );
 
-  const handleFile = useCallback(
-    (file: File) => {
-      if (!file.name.endsWith('.csv')) {
-        setLastImport({
-          fileName: file.name,
-          totalParsed: 0,
-          newAdded: 0,
-          duplicatesSkipped: 0,
-          errors: ['Please upload a CSV file'],
+  const handleFiles = useCallback(
+    async (files: File[]) => {
+      if (files.length === 0) return;
+      setIsProcessing(true);
+      setImportResults([]);
+
+      // Parse all files in parallel
+      const parsed = await Promise.all(files.map((f) => processFile(f)));
+
+      // Merge all transactions at once for accurate dedup counts
+      const allTransactions = parsed.flatMap((p) => p.transactions);
+      const countBefore = existingTransactions.length;
+      const merged = addTransactions(allTransactions);
+      const totalNewAdded = merged.length - countBefore;
+
+      // Calculate per-file results (approximate — dedup is global)
+      const results = parsed.map((p) => ({
+        ...p.result,
+        newAdded: p.transactions.length, // parsed count before dedup
+        duplicatesSkipped: 0,
+      }));
+
+      // Add a summary if multiple files
+      if (files.length > 1) {
+        const totalParsed = parsed.reduce((s, p) => s + p.result.totalParsed, 0);
+        const totalErrors = parsed.flatMap((p) => p.result.errors);
+        results.unshift({
+          fileName: `${files.length} files total`,
+          totalParsed,
+          newAdded: totalNewAdded,
+          duplicatesSkipped: totalParsed - totalNewAdded,
+          errors: totalErrors,
+          bank: 'Summary',
         });
-        return;
+      } else if (results.length === 1) {
+        results[0].newAdded = totalNewAdded;
+        results[0].duplicatesSkipped = results[0].totalParsed - totalNewAdded;
       }
 
-      setIsProcessing(true);
-
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const csv = e.target?.result as string;
-
-        // Auto-detect bank format from CSV headers
-        const firstLine = csv.split('\n')[0] || '';
-        const headers = firstLine.split(',').map((h) => h.trim().replace(/^"|"$/g, ''));
-
-        let result: { transactions: Transaction[]; errors: string[] };
-        let detectedBank = 'Unknown';
-
-        if (isAmexFormat(headers)) {
-          result = parseAmexCSV(csv);
-          detectedBank = 'Amex';
-        } else if (isNatWestFormat(headers)) {
-          result = parseNatWestCSV(csv);
-          detectedBank = 'NatWest';
-        } else {
-          // Fallback: try NatWest parser
-          result = parseNatWestCSV(csv);
-          detectedBank = 'NatWest (assumed)';
-        }
-
-        // Auto-save immediately
-        const countBefore = existingTransactions.length;
-        const merged = addTransactions(result.transactions);
-        const newAdded = merged.length - countBefore;
-        const duplicatesSkipped = result.transactions.length - newAdded;
-
-        setLastImport({
-          fileName: file.name,
-          totalParsed: result.transactions.length,
-          newAdded,
-          duplicatesSkipped,
-          errors: result.errors,
-          bank: detectedBank,
-        });
-        setIsProcessing(false);
-
-        // Trigger AI categorization for uncategorized transactions
-        if (newAdded > 0) {
-          categorizeWithAI(result.transactions);
-        }
-      };
-      reader.onerror = () => {
-        setLastImport({
-          fileName: file.name,
-          totalParsed: 0,
-          newAdded: 0,
-          duplicatesSkipped: 0,
-          errors: ['Failed to read file'],
-        });
-        setIsProcessing(false);
-      };
-      reader.readAsText(file);
+      setImportResults(results);
+      setIsProcessing(false);
     },
-    [addTransactions, existingTransactions.length, categorizeWithAI]
+    [addTransactions, existingTransactions.length, processFile]
   );
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       setIsDragging(false);
-      const file = e.dataTransfer.files[0];
-      if (file) handleFile(file);
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length > 0) handleFiles(files);
     },
-    [handleFile]
+    [handleFiles]
   );
 
   const handleFileInput = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) handleFile(file);
+      const files = Array.from(e.target.files || []);
+      if (files.length > 0) handleFiles(files);
       e.target.value = '';
     },
-    [handleFile]
+    [handleFiles]
   );
 
   // Stats from all stored transactions
@@ -250,98 +229,85 @@ export default function UploadPage() {
           }`}
         />
         <h2 className="text-lg font-semibold text-foreground mb-1">
-          {isProcessing
-            ? 'Processing...'
-            : isCategorizing
-            ? 'AI is categorizing your transactions...'
-            : 'Drop your CSV here'}
+          {isProcessing ? 'Processing...' : 'Drop your CSVs here'}
         </h2>
         <p className="text-sm text-muted mb-3">
-          NatWest & Amex auto-detected · AI auto-categorizes
+          NatWest & Amex auto-detected · Multiple files supported
         </p>
         <label className="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer">
           <Plus className="h-4 w-4" />
-          Choose CSV File
+          Choose CSV Files
           <input
             type="file"
             accept=".csv"
+            multiple
             onChange={handleFileInput}
             className="hidden"
           />
         </label>
       </div>
 
-      {/* AI Categorization Status */}
-      {isCategorizing && (
-        <div className="bg-accent/10 border border-accent/30 rounded-xl p-4 flex items-center gap-3">
-          <Loader2 className="h-5 w-5 text-accent animate-spin" />
-          <div>
-            <p className="font-medium text-foreground">
-              AI is categorizing transactions...
-            </p>
-            <p className="text-sm text-muted">
-              Using GPT-4o to classify spending as essential/discretionary
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Last Import Result */}
-      {lastImport && (
-        <div
-          className={`border rounded-xl p-4 ${
-            lastImport.errors.length > 0 && lastImport.newAdded === 0
-              ? 'bg-danger/10 border-danger/30'
-              : 'bg-success/10 border-success/30'
-          }`}
-        >
-          <div className="flex items-center gap-2 mb-2">
-            {lastImport.newAdded > 0 ? (
-              <CheckCircle2 className="h-5 w-5 text-success" />
-            ) : (
-              <AlertCircle className="h-5 w-5 text-warning" />
-            )}
-            <span className="font-medium text-foreground">
-              {lastImport.fileName}
-              {lastImport.bank && (
-                <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-accent/20 text-accent">
-                  {lastImport.bank}
+      {/* Import Results */}
+      {importResults.length > 0 && (
+        <div className="space-y-3">
+          {importResults.map((importResult, idx) => (
+            <div
+              key={idx}
+              className={`border rounded-xl p-4 ${
+                importResult.errors.length > 0 && importResult.newAdded === 0
+                  ? 'bg-danger/10 border-danger/30'
+                  : 'bg-success/10 border-success/30'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                {importResult.newAdded > 0 ? (
+                  <CheckCircle2 className="h-5 w-5 text-success" />
+                ) : (
+                  <AlertCircle className="h-5 w-5 text-warning" />
+                )}
+                <span className="font-medium text-foreground">
+                  {importResult.fileName}
+                  {importResult.bank && (
+                    <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-accent/20 text-accent">
+                      {importResult.bank}
+                    </span>
+                  )}
                 </span>
-              )}
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-4 text-sm">
-            <span className="text-muted">
-              Parsed:{' '}
-              <span className="text-foreground font-medium">
-                {lastImport.totalParsed.toLocaleString()}
-              </span>
-            </span>
-            <span className="text-success">
-              New:{' '}
-              <span className="font-medium">
-                +{lastImport.newAdded.toLocaleString()}
-              </span>
-            </span>
-            {lastImport.duplicatesSkipped > 0 && (
-              <span className="text-muted">
-                Duplicates skipped:{' '}
-                <span className="font-medium">
-                  {lastImport.duplicatesSkipped.toLocaleString()}
+              </div>
+              <div className="flex flex-wrap gap-4 text-sm">
+                <span className="text-muted">
+                  Parsed:{' '}
+                  <span className="text-foreground font-medium">
+                    {importResult.totalParsed.toLocaleString()}
+                  </span>
                 </span>
-              </span>
-            )}
-          </div>
-          {lastImport.errors.length > 0 && (
-            <div className="mt-2 text-xs text-danger/80">
-              {lastImport.errors.slice(0, 3).map((err, i) => (
-                <p key={i}>{err}</p>
-              ))}
-              {lastImport.errors.length > 3 && (
-                <p>...and {lastImport.errors.length - 3} more</p>
+                <span className="text-success">
+                  New:{' '}
+                  <span className="font-medium">
+                    +{importResult.newAdded.toLocaleString()}
+                  </span>
+                </span>
+                {importResult.duplicatesSkipped > 0 && (
+                  <span className="text-muted">
+                    Duplicates skipped:{' '}
+                    <span className="font-medium">
+                      {importResult.duplicatesSkipped.toLocaleString()}
+                    </span>
+                  </span>
+                )}
+              </div>
+              {importResult.errors.length > 0 && (
+                <div className="mt-2 text-xs text-danger/80">
+                  {importResult.errors.slice(0, 3).map((err, i) => (
+                    <p key={i}>{err}</p>
+                  ))}
+                  {importResult.errors.length > 3 && (
+                    <p>...and {importResult.errors.length - 3} more</p>
+                  )}
+                </div>
               )}
             </div>
-          )}
+          ))}
         </div>
       )}
 

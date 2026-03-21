@@ -7,6 +7,7 @@ import {
   clearTransactions,
   updateTransactions,
   saveTransactions,
+  recategorizeAll,
 } from '@/lib/storage';
 import type { Transaction, MonthlyBreakdown, PeriodOption } from '@/types';
 import { format, parseISO, subDays, subMonths, startOfDay } from 'date-fns';
@@ -36,6 +37,8 @@ export function useTransactions() {
   useEffect(() => {
     if (!loadedRef.current) {
       loadedRef.current = true;
+      // Re-apply keyword rules on load so new/updated rules take effect
+      recategorizeAll();
       setAllTransactions(getTransactions());
       setLoaded(true);
     }
@@ -92,16 +95,21 @@ export function useTransactions() {
     return allTransactions.filter((t) => t.date >= startDate);
   }, [allTransactions, startDate]);
 
+  // Categories that represent internal money movement — not real income or spending
+  const INTERNAL_CATEGORIES = new Set(['Transfers', 'Savings & Investments']);
+
   // All computed values use filteredTransactions
   const totalIncome = useMemo(
-    () => filteredTransactions.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0),
+    () => filteredTransactions
+      .filter((t) => t.amount > 0 && !INTERNAL_CATEGORIES.has(t.category))
+      .reduce((s, t) => s + t.amount, 0),
     [filteredTransactions]
   );
 
   const totalSpending = useMemo(
     () =>
       filteredTransactions
-        .filter((t) => t.amount < 0)
+        .filter((t) => t.amount < 0 && !INTERNAL_CATEGORIES.has(t.category))
         .reduce((s, t) => s + Math.abs(t.amount), 0),
     [filteredTransactions]
   );
@@ -166,12 +174,15 @@ export function useTransactions() {
         });
       }
       const m = map.get(month)!;
+      const isInternal = INTERNAL_CATEGORIES.has(t.category);
       if (t.amount > 0) {
-        m.income += t.amount;
+        if (!isInternal) m.income += t.amount;
       } else {
-        m.spending += Math.abs(t.amount);
-        if (t.isEssential === true) m.essentialSpend += Math.abs(t.amount);
-        else m.discretionarySpend += Math.abs(t.amount);
+        if (!isInternal) {
+          m.spending += Math.abs(t.amount);
+          if (t.isEssential === true) m.essentialSpend += Math.abs(t.amount);
+          else m.discretionarySpend += Math.abs(t.amount);
+        }
         m.byCategory[t.category] =
           (m.byCategory[t.category] || 0) + Math.abs(t.amount);
       }

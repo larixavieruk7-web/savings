@@ -1,13 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Upload, TrendingUp, Brain, TrendingDown, ArrowUpRight, ArrowDownRight, Target, ShieldCheck, Sparkles, PiggyBank } from 'lucide-react';
+import { Upload, TrendingUp, Brain, TrendingDown, ArrowUpRight, ArrowDownRight, Target, ShieldCheck, Sparkles, PiggyBank, Banknote, Landmark } from 'lucide-react';
 import Link from 'next/link';
 import { useTransactionContext } from '@/context/transactions';
 import { formatGBP, formatChange, gbpTooltipFormatter } from '@/lib/utils';
 import { CATEGORY_COLORS } from '@/lib/categories';
 import { getSavingsTargets, saveSavingsTargets } from '@/lib/storage';
-import type { CategoryName, SavingsTarget } from '@/types';
+import type { CategoryName, SavingsTarget, Transaction } from '@/types';
 import { PeriodSelector } from '@/components/dashboard/period-selector';
 import {
   PieChart,
@@ -127,6 +127,12 @@ export default function DashboardHome() {
           value={`${savingsRate.toFixed(1)}%`}
           positive={savingsRate > 0}
         />
+      </div>
+
+      {/* Household Salary + Mortgage & Loans side by side */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <HouseholdSalary transactions={transactions} />
+        <MortgageAndLoans transactions={transactions} />
       </div>
 
       {/* Charts Row */}
@@ -600,6 +606,170 @@ function BudgetRuleIndicator({
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function HouseholdSalary({ transactions }: { transactions: Transaction[] }) {
+  const salaryTxns = transactions.filter((t) => t.category === 'Salary' && t.amount > 0);
+
+  if (salaryTxns.length === 0) return null;
+
+  // Group by month — within each month, sort amounts descending to identify Gus (larger) vs Larissa (smaller)
+  const byMonth = new Map<string, number[]>();
+
+  for (const t of salaryTxns) {
+    const month = t.date.slice(0, 7);
+    if (!byMonth.has(month)) byMonth.set(month, []);
+    byMonth.get(month)!.push(t.amount);
+  }
+
+  const months = Array.from(byMonth.entries())
+    .sort(([a], [b]) => b.localeCompare(a));
+
+  return (
+    <div className="bg-card border border-card-border rounded-xl p-6">
+      <div className="flex items-center gap-2 mb-4">
+        <Banknote className="h-5 w-5 text-success" />
+        <h3 className="text-lg font-semibold text-foreground">
+          Household Salary (Net)
+        </h3>
+      </div>
+
+      <div className="space-y-0">
+        {months.map(([month, amounts]) => {
+          const sorted = [...amounts].sort((a, b) => b - a);
+          const total = sorted.reduce((s, a) => s + a, 0);
+          // Gus = largest payment, Larissa = second largest, rest = other
+          const gus = sorted[0] || 0;
+          const larissa = sorted[1] || 0;
+
+          return (
+            <div key={month} className="flex items-center justify-between py-3 border-b border-card-border last:border-0">
+              <div>
+                <p className="text-sm font-medium text-foreground">
+                  {format(parseISO(`${month}-01`), 'MMMM yyyy')}
+                </p>
+                <div className="flex gap-4 mt-0.5">
+                  <span className="text-xs text-muted">
+                    Gus: <span className="text-foreground">{formatGBP(gus)}</span>
+                  </span>
+                  {larissa > 0 && (
+                    <span className="text-xs text-muted">
+                      Larissa: <span className="text-foreground">{formatGBP(larissa)}</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+              <p className="text-lg font-bold text-success">{formatGBP(total)}</p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function MortgageAndLoans({ transactions }: { transactions: Transaction[] }) {
+  const debtTxns = transactions.filter(
+    (t) =>
+      t.amount < 0 &&
+      (t.category === 'Rent / Mortgage' || t.category === 'Debt Repayments')
+  );
+
+  if (debtTxns.length === 0) return null;
+
+  // Identify distinct products by description pattern + consistent amount
+  const products = new Map<string, { amounts: number[]; months: Set<string> }>();
+
+  for (const t of debtTxns) {
+    // Use rawDescription or clean description as the product key
+    const key = (t.rawDescription || t.description).trim().toUpperCase();
+    if (!products.has(key)) products.set(key, { amounts: [], months: new Set() });
+    const p = products.get(key)!;
+    p.amounts.push(Math.abs(t.amount));
+    p.months.add(t.date.slice(0, 7));
+  }
+
+  // Build product summaries
+  const productList = Array.from(products.entries()).map(([key, data]) => {
+    const latest = data.amounts[0]; // most recent (transactions are date-sorted desc)
+    const total = data.amounts.reduce((s, a) => s + a, 0);
+    const avgMonthly = data.months.size > 0 ? total / data.months.size : latest;
+    const isMortgage = key.includes('NATIONWIDE');
+    return {
+      name: key.includes('NATIONWIDE') ? 'Nationwide Mortgage' : key.includes('NATWEST LOAN') ? 'NatWest Loan' : key,
+      category: isMortgage ? 'Mortgage' : 'Loan',
+      latestPayment: latest,
+      monthlyAvg: avgMonthly,
+      totalPaid: total,
+      monthCount: data.months.size,
+    };
+  });
+
+  // Group Nationwide payments together (they are separate D/Ds but same lender)
+  const nationwideProducts = productList.filter((p) => p.name === 'Nationwide Mortgage');
+  const otherProducts = productList.filter((p) => p.name !== 'Nationwide Mortgage');
+
+  const nationwideCombined = nationwideProducts.length > 0
+    ? {
+        name: 'Nationwide Mortgage',
+        category: 'Mortgage' as const,
+        subProducts: nationwideProducts.length,
+        monthlyAvg: nationwideProducts.reduce((s, p) => s + p.monthlyAvg, 0),
+        latestPayment: nationwideProducts.reduce((s, p) => s + p.latestPayment, 0),
+        totalPaid: nationwideProducts.reduce((s, p) => s + p.totalPaid, 0),
+        monthCount: Math.max(...nationwideProducts.map((p) => p.monthCount)),
+      }
+    : null;
+
+  const allProducts = [
+    ...(nationwideCombined ? [nationwideCombined] : []),
+    ...otherProducts,
+  ];
+
+  const totalMonthly = allProducts.reduce((s, p) => s + p.latestPayment, 0);
+
+  return (
+    <div className="bg-card border border-card-border rounded-xl p-6">
+      <div className="flex items-center gap-2 mb-4">
+        <Landmark className="h-5 w-5 text-danger" />
+        <h3 className="text-lg font-semibold text-foreground">
+          Mortgage & Loans
+        </h3>
+      </div>
+
+      {/* Total monthly */}
+      <div className="bg-[#111118] rounded-lg p-4 border border-card-border mb-4">
+        <p className="text-xs text-muted mb-1">Total Monthly Payments</p>
+        <p className="text-2xl font-bold text-danger">{formatGBP(totalMonthly)}</p>
+      </div>
+
+      {/* Individual products */}
+      <div className="space-y-0">
+        {allProducts.map((product) => (
+          <div key={product.name} className="flex items-center justify-between py-3 border-b border-card-border last:border-0">
+            <div>
+              <p className="text-sm font-medium text-foreground">{product.name}</p>
+              <div className="flex gap-3 mt-0.5">
+                <span className="text-xs text-muted">
+                  {product.category}
+                  {'subProducts' in product && (product as { subProducts: number }).subProducts > 1
+                    ? ` (${(product as { subProducts: number }).subProducts} products)`
+                    : ''}
+                </span>
+                <span className="text-xs text-muted">
+                  {product.monthCount} months paid
+                </span>
+                <span className="text-xs text-muted">
+                  Total: <span className="text-foreground">{formatGBP(product.totalPaid)}</span>
+                </span>
+              </div>
+            </div>
+            <p className="text-base font-semibold text-danger">{formatGBP(product.latestPayment)}<span className="text-xs text-muted font-normal">/mo</span></p>
+          </div>
+        ))}
       </div>
     </div>
   );

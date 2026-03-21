@@ -232,14 +232,17 @@ function InlineNicknameEditor({
 
   if (!editing) {
     return (
-      <button
+      <span
         onClick={() => setEditing(true)}
-        className="flex items-center gap-1.5 text-sm text-muted hover:text-foreground transition-colors group"
+        className="flex items-center gap-1.5 text-sm text-muted hover:text-foreground transition-colors group cursor-pointer"
         title="Click to edit nickname"
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setEditing(true); }}
       >
         <span>{initialDisplayName !== rawName ? initialDisplayName : 'Add nickname'}</span>
         <Pencil className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-      </button>
+      </span>
     );
   }
 

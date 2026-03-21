@@ -112,6 +112,13 @@ export const DEFAULT_RULES: CategoryRule[] = [
   { pattern: 'Via Mobile Xfer', category: 'Transfers', source: 'system' },
   { pattern: 'ROUND UP FROM', category: 'Savings & Investments', source: 'system' },
 
+  // Credit card payments (internal transfers — not real income/spending)
+  { pattern: 'AMERICAN EXP', category: 'Transfers', source: 'system' },
+  { pattern: 'PAYMENT RECEIVED - THANK YOU', category: 'Transfers', source: 'system' },
+
+  // JPMC salary (Larissa & Gus — both paid via 3305 JPMCB BAC)
+  { pattern: '3305 JPMCB', category: 'Salary', source: 'system' },
+
   // Interest
   { pattern: 'INTER BON', category: 'Income', source: 'system' },
 
@@ -126,7 +133,9 @@ export const DEFAULT_RULES: CategoryRule[] = [
 
   // Loans & Debt
   { pattern: 'NATWEST LOAN', category: 'Debt Repayments', source: 'system' },
-  { pattern: 'NATIONWIDE B S', category: 'Debt Repayments', source: 'system' },
+
+  // Mortgage (Nationwide Building Society)
+  { pattern: 'NATIONWIDE B S', category: 'Rent / Mortgage', source: 'system' },
 
   // Utilities (from D/D patterns)
   { pattern: 'OCTOPUS ENERGY', category: 'Utilities', source: 'system' },

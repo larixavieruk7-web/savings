@@ -1,6 +1,7 @@
 'use client';
 
 import type { Transaction, CategoryRule, SavingsTarget } from '@/types';
+import { categorize } from '@/lib/categories';
 
 const KEYS = {
   transactions: 'savings_transactions',
@@ -54,6 +55,33 @@ export function updateTransactions(updates: Partial<Transaction> & { id: string 
 
 export function clearTransactions(): void {
   localStorage.removeItem(KEYS.transactions);
+}
+
+/** Re-apply keyword rules to all transactions (skips manual corrections) */
+export function recategorizeAll(): { updated: number; total: number } {
+  const transactions = getTransactions();
+  const customRules = getCustomRules();
+  let updated = 0;
+
+  for (const t of transactions) {
+    // Skip manual corrections — the user explicitly set these
+    if (t.categorySource === 'manual') continue;
+
+    const { category, subcategory } = categorize(
+      t.rawDescription || t.description,
+      customRules
+    );
+
+    if (category !== t.category) {
+      t.category = category;
+      t.subcategory = subcategory;
+      t.categorySource = 'rule';
+      updated++;
+    }
+  }
+
+  if (updated > 0) saveTransactions(transactions);
+  return { updated, total: transactions.length };
 }
 
 // ─── Custom Rules (user corrections) ────────────────────────────
