@@ -9,6 +9,9 @@ savings_insights_cache     — cached AI insights results
 savings_custom_colors      — Record<string, string> (category name → hex color)
 savings_account_nicknames  — Record<string, string> (raw account name → friendly name)
 savings_knowledge_bank     — KnowledgeEntry[]
+savings_account_types      — AccountConfig[] (hub/credit-card/savings hierarchy)
+savings_dismissed_recommendations — string[] (dismissed recommendation IDs)
+savings_monthly_analyses   — StoredAnalysis[] (AI monthly analysis results, persisted per cycle)
 ```
 All reads/writes go through `storage.ts` — never access localStorage directly in pages.
 

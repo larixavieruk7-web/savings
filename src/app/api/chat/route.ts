@@ -8,20 +8,29 @@ function getOpenAI() {
   return _openai
 }
 
-const SYSTEM_PROMPT = `You are a personal finance assistant built into Larissa and Gus's savings dashboard. You have direct access to their real transaction data — every answer must come from that data.
+const SYSTEM_PROMPT = `You are a prescriptive personal finance advisor built into Larissa and Gus's savings dashboard. You have direct access to their real transaction data, health scorecard, and spending intelligence — every answer must come from that data.
+
+Your job is NOT just to answer questions. You should PUSH BACK on bad patterns, CELEBRATE good habits, and RECOMMEND specific actions.
 
 HARD RULES — never break these:
 - NEVER suggest external apps, tools, or services (no Truebill, YNAB, Monzo, etc.) — you ARE the tool
 - NEVER give generic financial advice — every statement must reference specific numbers, merchants, or accounts from the data
 - NEVER say "I don't have enough information" if the data contains a relevant section — read the full context
-- If a question is about subscriptions or duplicates, check the "Potential Duplicate Subscriptions" and "All Recurring Payments" sections — they are pre-computed from all transactions
+- If a question is about subscriptions or duplicates, check the "Potential Duplicate Subscriptions" and "All Recurring Payments" sections
 - If data shows no duplicates, say exactly that: "I checked your transactions and found no merchants charging from multiple accounts"
 - Format all amounts as £X.XX using the exact figures from the data
 - Keep responses under 200 words — be direct, not thorough
 - Never pad with suggestions that aren't grounded in the actual data shown
+- When the health scorecard or recommendations are present, reference them in your answers
+- If category creep data shows rising categories, proactively flag them even if the user didn't ask
+- If savings rate is below 20%, mention it and suggest specific cuts from the data
 
 Context you have access to:
-- Pre-computed duplicate subscription detection (merchants recurring on 2+ accounts)
+- Health Scorecard (overall financial health score 0-100 with sub-scores)
+- Active Recommendations (prescriptive, severity-rated push-back items)
+- Category Creep Detection (categories drifting up vs 3-cycle rolling average)
+- Salary Flow (where salary went: credit cards, savings, direct debits, spending)
+- Pre-computed duplicate subscription detection
 - All recurring payments grouped by account
 - Top spending categories and merchants
 - Monthly income/spending/net breakdown
@@ -57,6 +66,30 @@ interface ChatContext {
   discretionarySpending?: number
   potentialDuplicateSubscriptions?: PotentialDuplicate[]
   recurringMerchants?: RecurringMerchant[]
+  // Intelligence layer
+  healthScorecard?: {
+    overallScore: number
+    verdict: string
+    highlights: string[]
+    warnings: string[]
+    metrics: {
+      savingsRate: number
+      essentialRatio: number
+      creepCount: number
+      unaccountedPct: number
+    }
+  }
+  categoryCreep?: { category: string; currentCycleSpend: number; rollingAverage: number; percentIncrease: number; trend: string }[]
+  recommendations?: { severity: string; title: string; detail: string; potentialSaving: number; actionType: string }[]
+  salaryFlow?: {
+    totalSalary: number
+    creditCardPayments: number
+    savingsContributions: number
+    directDebits: number
+    directSpending: number
+    creditCardSpending: number
+    unaccounted: number
+  }
 }
 
 function buildContextMessage(context: ChatContext): string {
@@ -92,6 +125,50 @@ function buildContextMessage(context: ChatContext): string {
         parts.push(`  - ${m.merchant}: £${(m.avgAmountPence / 100).toFixed(2)}/mo (${m.monthCount} months)`)
       }
     }
+  }
+
+  // --- INTELLIGENCE LAYER ---
+  if (context.healthScorecard) {
+    const s = context.healthScorecard
+    parts.push('\n## Health Scorecard')
+    parts.push(`- Overall Score: ${s.overallScore}/100 — "${s.verdict}"`)
+    parts.push(`- Savings Rate: ${s.metrics.savingsRate.toFixed(1)}%`)
+    parts.push(`- Essential Ratio: ${s.metrics.essentialRatio.toFixed(1)}%`)
+    parts.push(`- Categories Creeping: ${s.metrics.creepCount}`)
+    parts.push(`- Unaccounted: ${s.metrics.unaccountedPct.toFixed(1)}%`)
+    if (s.highlights.length > 0) {
+      parts.push('Highlights: ' + s.highlights.join('; '))
+    }
+    if (s.warnings.length > 0) {
+      parts.push('WARNINGS: ' + s.warnings.join('; '))
+    }
+  }
+
+  if (context.recommendations && context.recommendations.length > 0) {
+    parts.push('\n## Active Recommendations (push back on these)')
+    for (const r of context.recommendations) {
+      const saving = r.potentialSaving > 0 ? ` (potential saving: £${(r.potentialSaving / 100).toFixed(2)}/cycle)` : ''
+      parts.push(`- [${r.severity.toUpperCase()}] ${r.title}: ${r.detail}${saving}`)
+    }
+  }
+
+  if (context.categoryCreep && context.categoryCreep.length > 0) {
+    parts.push('\n## Category Trends (vs 3-cycle average)')
+    for (const c of context.categoryCreep) {
+      parts.push(`- ${c.category}: £${(c.currentCycleSpend / 100).toFixed(2)} this cycle (avg £${(c.rollingAverage / 100).toFixed(2)}, ${c.percentIncrease > 0 ? '+' : ''}${c.percentIncrease.toFixed(1)}% — ${c.trend})`)
+    }
+  }
+
+  if (context.salaryFlow) {
+    const f = context.salaryFlow
+    parts.push('\n## Salary Flow (where salary went)')
+    parts.push(`- Total Salary: £${(f.totalSalary / 100).toFixed(2)}`)
+    parts.push(`- → Credit Card Payments: £${(f.creditCardPayments / 100).toFixed(2)}`)
+    parts.push(`- → Savings: £${(f.savingsContributions / 100).toFixed(2)}`)
+    parts.push(`- → Direct Debits: £${(f.directDebits / 100).toFixed(2)}`)
+    parts.push(`- → Debit Card Spend: £${(f.directSpending / 100).toFixed(2)}`)
+    parts.push(`- → Actual Credit Card Charges: £${(f.creditCardSpending / 100).toFixed(2)}`)
+    parts.push(`- Unaccounted: £${(f.unaccounted / 100).toFixed(2)}`)
   }
 
   // --- SUMMARY ---

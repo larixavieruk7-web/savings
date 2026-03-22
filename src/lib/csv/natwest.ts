@@ -88,7 +88,7 @@ export function parseNatWestCSV(
       // Categorize
       const description = row.Description?.trim() || '';
       const txnType = row.Type?.trim().toUpperCase() || '';
-      const { category, subcategory } = categorize(description, customRules);
+      const { category, subcategory, isEssential: ruleEssential } = categorize(description, customRules);
 
       // NatWest type-based fallback when description rules don't match
       let finalCategory = category;
@@ -97,9 +97,10 @@ export function parseNatWestCSV(
         else if (txnType === 'C/L') finalCategory = 'Cash Withdrawals';
         else if (txnType === 'INT') finalCategory = 'Income';
         else if (txnType === 'FEES') finalCategory = 'Bank Charges';
-        else if (amountPence > 0) finalCategory = 'Income';
-      } else if (amountPence > 0 && category === 'Other') {
-        finalCategory = 'Income';
+        // BAC is the most common UK payment type — do NOT default to Salary.
+        // Only known salary patterns (3305 JPMCB, XAVIER DA SILVA G) should
+        // be Salary — those are caught by keyword rules above.
+        // Unknown BAC credits stay as 'Other' to avoid inflating income.
       }
 
       // Build a unique ID including account to handle multi-account CSVs
@@ -125,7 +126,10 @@ export function parseNatWestCSV(
         balance: balancePence,
         category: finalCategory,
         subcategory,
+        isEssential: ruleEssential,
         accountName: row['Account Name']?.trim(),
+        source: 'natwest' as const,
+        categorySource: 'rule' as const,
         isRecurring: false,
         merchantName: extractMerchant(description),
       });

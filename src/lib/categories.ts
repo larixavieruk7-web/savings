@@ -113,7 +113,9 @@ export const DEFAULT_RULES: CategoryRule[] = [
   { pattern: 'ROUND UP FROM', category: 'Savings & Investments', source: 'system' },
 
   // Credit card payments (internal transfers — not real income/spending)
+  // NatWest shows Amex payments under several description variants — all must be Transfers
   { pattern: 'AMERICAN EXP', category: 'Transfers', source: 'system' },
+  { pattern: 'AMEX', category: 'Transfers', source: 'system' },
   { pattern: 'PAYMENT RECEIVED - THANK YOU', category: 'Transfers', source: 'system' },
 
   // JPMC salary (Larissa & Gus — both paid via 3305 JPMCB BAC)
@@ -195,24 +197,54 @@ export const CATEGORY_COLORS: Record<string, string> = {
   'Other': '#a1a1aa',
 };
 
+// Categories where spending is essential (needs, not wants)
+export const ESSENTIAL_CATEGORIES = new Set([
+  'Groceries', 'Transport', 'Utilities', 'Housing', 'Rent / Mortgage',
+  'Insurance', 'Phone & Internet', 'Healthcare', 'Childcare & Education',
+  'Education', 'Debt Repayments',
+]);
+
+// Categories where spending is discretionary (wants, not needs)
+export const DISCRETIONARY_CATEGORIES = new Set([
+  'Dining Out', 'Subscriptions', 'Shopping', 'Entertainment',
+  'Health & Fitness', 'Personal Care', 'Drinks & Nights Out',
+  'Holidays & Travel', 'Travel & Holidays', 'Gifts & Donations',
+  'Charity', 'Cash Withdrawals',
+]);
+
+/** Derive isEssential from category name */
+export function isEssentialCategory(category: string): boolean | undefined {
+  if (ESSENTIAL_CATEGORIES.has(category)) return true;
+  if (DISCRETIONARY_CATEGORIES.has(category)) return false;
+  return undefined; // neutral categories (Transfers, Savings, Income, Other)
+}
+
 /** Categorize a transaction description using rules */
 export function categorize(
   description: string,
   customRules: CategoryRule[] = []
-): { category: string; subcategory?: string } {
+): { category: string; subcategory?: string; isEssential?: boolean } {
   const upper = description.toUpperCase();
 
   // Check custom/user rules first (higher priority)
   for (const rule of customRules) {
     if (upper.includes(rule.pattern.toUpperCase())) {
-      return { category: rule.category, subcategory: rule.subcategory };
+      return {
+        category: rule.category,
+        subcategory: rule.subcategory,
+        isEssential: rule.isEssential ?? isEssentialCategory(rule.category),
+      };
     }
   }
 
   // Check default system rules
   for (const rule of DEFAULT_RULES) {
     if (upper.includes(rule.pattern.toUpperCase())) {
-      return { category: rule.category, subcategory: rule.subcategory };
+      return {
+        category: rule.category,
+        subcategory: rule.subcategory,
+        isEssential: rule.isEssential ?? isEssentialCategory(rule.category),
+      };
     }
   }
 

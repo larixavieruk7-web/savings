@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Upload, TrendingUp, Brain, TrendingDown, ArrowUpRight, ArrowDownRight, Target, ShieldCheck, Sparkles, PiggyBank, Banknote, Landmark } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Upload, TrendingUp, Brain, TrendingDown, ArrowUpRight, ArrowDownRight, Target, ShieldCheck, Sparkles, PiggyBank, Banknote, Landmark, X, ChevronDown } from 'lucide-react';
 import Link from 'next/link';
 import { useTransactionContext } from '@/context/transactions';
 import { formatGBP, formatChange, gbpTooltipFormatter } from '@/lib/utils';
@@ -11,6 +11,10 @@ import type { CategoryName, SavingsTarget, Transaction } from '@/types';
 import { PeriodSelector } from '@/components/dashboard/period-selector';
 import { DuplicateSubscriptionAlert } from '@/components/subscriptions/DuplicateSubscriptionAlert';
 import { computeSubscriptionData } from '@/lib/subscriptions';
+import { HealthScorecardWidget } from '@/components/dashboard/health-scorecard';
+import { RecommendationsPanel } from '@/components/dashboard/recommendations-panel';
+import { SalaryFlowChart } from '@/components/dashboard/salary-flow';
+import { AIAnalysis } from '@/components/dashboard/ai-analysis';
 import {
   PieChart,
   Pie,
@@ -25,6 +29,9 @@ import {
 } from 'recharts';
 import { format, parseISO } from 'date-fns';
 
+// Categories excluded from spending (must match useTransactions.ts)
+const INTERNAL_CATEGORIES = new Set(['Transfers', 'Savings & Investments']);
+
 export default function DashboardHome() {
   const {
     transactions,
@@ -36,7 +43,13 @@ export default function DashboardHome() {
     categoryBreakdown,
     monthlyBreakdowns,
     dateRange,
+    updateOne,
+    healthScorecard,
+    recommendations,
+    salaryFlow,
   } = useTransactionContext();
+
+  const [showSpendingDrilldown, setShowSpendingDrilldown] = useState(false);
 
   if (!loaded) {
     return (
@@ -122,6 +135,7 @@ export default function DashboardHome() {
             ? formatChange(currentMonth.spending, prevMonth.spending)
             : undefined}
           positive={false}
+          onClick={() => setShowSpendingDrilldown(true)}
         />
         <KpiCard
           label="Net Savings"
@@ -135,10 +149,25 @@ export default function DashboardHome() {
         />
       </div>
 
+      {/* Health Scorecard + Recommendations */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <HealthScorecardWidget scorecard={healthScorecard} />
+        <RecommendationsPanel recommendations={recommendations} />
+      </div>
+
+      {/* AI Monthly Analysis */}
+      <AIAnalysis />
+
       {/* Household Salary + Mortgage & Loans side by side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <HouseholdSalary transactions={transactions} />
         <MortgageAndLoans transactions={transactions} />
+      </div>
+
+      {/* Where salary went + Card spending */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <SalaryFlowChart salaryFlow={salaryFlow} />
+        <CardSpendingBreakdown transactions={transactions} />
       </div>
 
       {/* Charts Row */}
@@ -267,6 +296,15 @@ export default function DashboardHome() {
         essentialSpending={essentialSpending}
         discretionarySpending={discretionarySpending}
       />
+
+      {showSpendingDrilldown && (
+        <SpendingDrilldown
+          transactions={transactions}
+          total={totalSpending}
+          onReclassify={(id, category) => updateOne(id, { category, categorySource: 'manual' })}
+          onClose={() => setShowSpendingDrilldown(false)}
+        />
+      )}
     </div>
   );
 }
@@ -276,15 +314,23 @@ function KpiCard({
   value,
   change,
   positive,
+  onClick,
 }: {
   label: string;
   value: string;
   change?: string;
   positive: boolean;
+  onClick?: () => void;
 }) {
   return (
-    <div className="bg-card border border-card-border rounded-xl p-5">
-      <p className="text-sm text-muted mb-1">{label}</p>
+    <div
+      className={`bg-card border border-card-border rounded-xl p-5 ${onClick ? 'cursor-pointer hover:border-accent/50 transition-colors' : ''}`}
+      onClick={onClick}
+    >
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-sm text-muted">{label}</p>
+        {onClick && <ChevronDown className="h-3.5 w-3.5 text-muted" />}
+      </div>
       <p className={`text-2xl font-bold ${positive ? 'text-success' : 'text-danger'}`}>
         {value}
       </p>
@@ -703,9 +749,18 @@ function MortgageAndLoans({ transactions }: { transactions: Transaction[] }) {
     const latest = data.amounts[0]; // most recent (transactions are date-sorted desc)
     const total = data.amounts.reduce((s, a) => s + a, 0);
     const avgMonthly = data.months.size > 0 ? total / data.months.size : latest;
-    const isMortgage = key.includes('NATIONWIDE');
+    const isMortgage = key.includes('NATIONWIDE') || key.includes('ACC-NWESTMSTR');
+    const resolveName = (k: string) => {
+      if (k.includes('NATIONWIDE')) return 'Nationwide Mortgage';
+      if (k.includes('ACC-NWESTMSTR')) return 'NatWest Mortgage';
+      if (k.includes('NATWEST LOAN') || k.includes('ACC-NWEST LOAN')) return 'NatWest Loan';
+      if (k.includes('ACC-NWEST')) return 'NatWest Account Payment';
+      if (k.includes('NOVUNA')) return 'Novuna Finance';
+      // Fallback: take the first meaningful segment before a comma or reference number
+      return k.split(',')[0].trim() || k;
+    };
     return {
-      name: key.includes('NATIONWIDE') ? 'Nationwide Mortgage' : key.includes('NATWEST LOAN') ? 'NatWest Loan' : key,
+      name: resolveName(key),
       category: isMortgage ? 'Mortgage' : 'Loan',
       latestPayment: latest,
       monthlyAvg: avgMonthly,
@@ -776,6 +831,288 @@ function MortgageAndLoans({ transactions }: { transactions: Transaction[] }) {
             <p className="text-base font-semibold text-danger">{formatGBP(product.latestPayment)}<span className="text-xs text-muted font-normal">/mo</span></p>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Card type colours ──────────────────────────────────────────────────────
+const CARD_COLORS: Record<string, string> = {
+  amex: '#2563eb',   // blue
+  natwest: '#16a34a', // green
+};
+
+function resolveCardLabel(accountName: string | undefined, source: string | undefined): {
+  label: string;
+  sublabel: string;
+  colorKey: string;
+} {
+  if (source === 'amex' && accountName) {
+    // "Amex LARISSA (****21013)" or "Amex G (****21005)"
+    const upper = accountName.toUpperCase();
+    const accountMatch = accountName.match(/\(([^)]+)\)/);
+    const accountSuffix = accountMatch ? accountMatch[1] : '';
+    if (upper.includes('LARISSA')) {
+      return { label: 'Larissa', sublabel: `Amex · ${accountSuffix}`, colorKey: 'amex' };
+    }
+    // Gus — "G XAVIER" gives first token "G", or check for GUS/XAVIER
+    return { label: 'Gus', sublabel: `Amex · ${accountSuffix}`, colorKey: 'amex' };
+  }
+  if (source === 'natwest' || !source) {
+    const name = accountName || 'NatWest';
+    return { label: name, sublabel: 'NatWest Debit', colorKey: 'natwest' };
+  }
+  return { label: accountName || 'Unknown', sublabel: source || '', colorKey: 'natwest' };
+}
+
+function CardSpendingBreakdown({ transactions }: { transactions: Transaction[] }) {
+  const cards = useMemo(() => {
+    const map = new Map<string, {
+      label: string;
+      sublabel: string;
+      colorKey: string;
+      total: number;
+      count: number;
+    }>();
+
+    for (const t of transactions) {
+      if (t.amount >= 0 || INTERNAL_CATEGORIES.has(t.category)) continue;
+
+      const resolved = resolveCardLabel(t.accountName, t.source);
+      // Group Amex cards by label (Gus/Larissa), NatWest by accountName
+      const key = resolved.label + '|' + resolved.sublabel;
+
+      if (!map.has(key)) {
+        map.set(key, { ...resolved, total: 0, count: 0 });
+      }
+      const entry = map.get(key)!;
+      entry.total += Math.abs(t.amount);
+      entry.count++;
+    }
+
+    return Array.from(map.values()).sort((a, b) => b.total - a.total);
+  }, [transactions]);
+
+  const grandTotal = cards.reduce((s, c) => s + c.total, 0);
+
+  if (cards.length === 0) return null;
+
+  return (
+    <div className="bg-card border border-card-border rounded-xl p-6">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h3 className="text-lg font-semibold text-foreground">Spending by Card</h3>
+          <p className="text-xs text-muted mt-0.5">This cycle · all spend sources</p>
+        </div>
+        <span className="text-sm font-semibold text-danger">{formatGBP(grandTotal)}</span>
+      </div>
+
+      {/* Card rows */}
+      <div className="space-y-4">
+        {cards.map((card) => {
+          const pct = grandTotal > 0 ? (card.total / grandTotal) * 100 : 0;
+          const color = CARD_COLORS[card.colorKey] ?? '#6b7280';
+          return (
+            <div key={card.label + card.sublabel}>
+              {/* Label row */}
+              <div className="flex items-baseline justify-between mb-1.5">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-sm font-medium text-foreground">{card.label}</span>
+                  <span className="text-xs text-muted">{card.sublabel}</span>
+                </div>
+                <div className="flex items-baseline gap-2.5">
+                  <span className="text-xs text-muted">{card.count} txns</span>
+                  <span className="text-sm font-semibold text-foreground tabular-nums">
+                    {formatGBP(card.total)}
+                  </span>
+                  <span className="text-xs text-muted w-9 text-right tabular-nums">
+                    {pct.toFixed(0)}%
+                  </span>
+                </div>
+              </div>
+              {/* Bar */}
+              <div className="h-1.5 bg-card-border rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-500"
+                  style={{ width: `${pct}%`, backgroundColor: color }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SpendingDrilldown({
+  transactions,
+  total,
+  onReclassify,
+  onClose,
+}: {
+  transactions: Transaction[];
+  total: number;
+  onReclassify: (id: string, category: string) => void;
+  onClose: () => void;
+}) {
+  const [sortBy, setSortBy] = useState<'amount' | 'date'>('amount');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  // Track which rows have been reclassified this session so they fade out
+  const [reclassified, setReclassified] = useState<Set<string>>(new Set());
+
+  const spendingTxns = useMemo(() => {
+    return transactions
+      .filter((t) => t.amount < 0 && !INTERNAL_CATEGORIES.has(t.category) && !reclassified.has(t.id))
+      .sort((a, b) =>
+        sortBy === 'amount'
+          ? Math.abs(b.amount) - Math.abs(a.amount)
+          : b.date.localeCompare(a.date)
+      );
+  }, [transactions, sortBy, reclassified]);
+
+  const filtered = categoryFilter
+    ? spendingTxns.filter((t) => t.category === categoryFilter)
+    : spendingTxns;
+
+  const categories = useMemo(() => {
+    const cats = new Map<string, number>();
+    for (const t of spendingTxns) {
+      cats.set(t.category, (cats.get(t.category) || 0) + Math.abs(t.amount));
+    }
+    return Array.from(cats.entries()).sort(([, a], [, b]) => b - a);
+  }, [spendingTxns]);
+
+  const liveTotal = useMemo(
+    () => spendingTxns.reduce((s, t) => s + Math.abs(t.amount), 0),
+    [spendingTxns]
+  );
+
+  function handleReclassify(id: string, category: string) {
+    onReclassify(id, category);
+    setReclassified((prev) => new Set(prev).add(id));
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      style={{ backgroundColor: 'rgba(0,0,0,0.75)' }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-card border border-card-border rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-card-border shrink-0">
+          <div>
+            <p className="text-xs text-muted uppercase tracking-wider mb-0.5">Spending breakdown</p>
+            <div className="flex items-baseline gap-2">
+              <p className="text-xl font-bold text-danger">{formatGBP(liveTotal)}</p>
+              {reclassified.size > 0 && (
+                <p className="text-xs text-muted">
+                  ({reclassified.size} removed · was {formatGBP(total)})
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1 bg-[#111118] border border-card-border rounded-lg p-0.5">
+              <button
+                onClick={() => setSortBy('amount')}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${sortBy === 'amount' ? 'bg-accent text-white' : 'text-muted hover:text-foreground'}`}
+              >
+                Largest first
+              </button>
+              <button
+                onClick={() => setSortBy('date')}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${sortBy === 'date' ? 'bg-accent text-white' : 'text-muted hover:text-foreground'}`}
+              >
+                Latest first
+              </button>
+            </div>
+            <button onClick={onClose} className="text-muted hover:text-foreground transition-colors">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Category filter pills */}
+        <div className="px-5 py-2.5 border-b border-card-border flex gap-1.5 overflow-x-auto shrink-0 scrollbar-hide">
+          <button
+            onClick={() => setCategoryFilter('')}
+            className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${!categoryFilter ? 'bg-accent text-white' : 'bg-[#111118] text-muted hover:text-foreground border border-card-border'}`}
+          >
+            All ({spendingTxns.length})
+          </button>
+          {categories.map(([cat, amt]) => (
+            <button
+              key={cat}
+              onClick={() => setCategoryFilter(cat === categoryFilter ? '' : cat)}
+              className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${categoryFilter === cat ? 'bg-accent text-white' : 'bg-[#111118] text-muted hover:text-foreground border border-card-border'}`}
+            >
+              {cat} · {formatGBP(amt)}
+            </button>
+          ))}
+        </div>
+
+        {/* Hint */}
+        <div className="px-5 py-2 bg-[#111118] border-b border-card-border shrink-0">
+          <p className="text-xs text-muted">
+            Hover a row to reclassify — <span className="text-foreground">Transfer</span> removes it from spending,{' '}
+            <span className="text-foreground">Savings</span> moves it to investments.
+          </p>
+        </div>
+
+        {/* Transaction list */}
+        <div className="overflow-y-auto flex-1 divide-y divide-card-border">
+          {filtered.map((t) => (
+            <div key={t.id} className="group flex items-center justify-between px-5 py-2.5 hover:bg-[#111118] transition-colors">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <span className="text-xs text-muted shrink-0 w-[72px]">
+                  {format(parseISO(t.date), 'dd MMM yy')}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-foreground truncate">{t.description}</p>
+                  <p className="text-xs text-muted">{t.category}</p>
+                </div>
+              </div>
+              {/* Action buttons — visible on hover */}
+              <div className="hidden group-hover:flex items-center gap-1 shrink-0 mx-3">
+                <button
+                  onClick={() => handleReclassify(t.id, 'Transfers')}
+                  title="Mark as Transfer (removes from spending)"
+                  className="px-2 py-0.5 rounded text-xs font-medium bg-blue-900/40 text-blue-400 hover:bg-blue-900/70 border border-blue-800/50 transition-colors whitespace-nowrap"
+                >
+                  Transfer
+                </button>
+                <button
+                  onClick={() => handleReclassify(t.id, 'Savings & Investments')}
+                  title="Mark as Savings (removes from spending)"
+                  className="px-2 py-0.5 rounded text-xs font-medium bg-green-900/40 text-green-400 hover:bg-green-900/70 border border-green-800/50 transition-colors whitespace-nowrap"
+                >
+                  Savings
+                </button>
+              </div>
+              <span className="text-sm font-medium text-danger shrink-0 group-hover:hidden">
+                {formatGBP(Math.abs(t.amount))}
+              </span>
+            </div>
+          ))}
+          {filtered.length === 0 && (
+            <p className="text-center text-muted text-sm py-8">No transactions</p>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-3 border-t border-card-border shrink-0">
+          <p className="text-xs text-muted text-center">
+            {filtered.length} transaction{filtered.length !== 1 ? 's' : ''}
+            {categoryFilter && ` in ${categoryFilter}`}
+            {' · '}filtered total:{' '}
+            <span className="text-foreground font-medium">
+              {formatGBP(filtered.reduce((s, t) => s + Math.abs(t.amount), 0))}
+            </span>
+          </p>
+        </div>
       </div>
     </div>
   );

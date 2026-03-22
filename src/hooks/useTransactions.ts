@@ -8,30 +8,105 @@ import {
   updateTransactions,
   saveTransactions,
   recategorizeAll,
+  getAccountTypes,
+  saveAccountTypes,
 } from '@/lib/storage';
-import type { Transaction, MonthlyBreakdown, PeriodOption } from '@/types';
-import { format, parseISO, subDays, subMonths, startOfDay } from 'date-fns';
+import type { Transaction, MonthlyBreakdown, PeriodOption, AccountConfig, SalaryFlow, CategoryCreep, HealthScorecard, Recommendation } from '@/types';
+import { format, parseISO, addMonths, setDate, subMonths } from 'date-fns';
+import { detectAllAccountTypes, reclassifyTransfers } from '@/lib/account-hierarchy';
+import { computeSalaryFlow } from '@/lib/money-flow';
+import { detectCategoryCreep } from '@/lib/intelligence/category-creep';
+import { detectConveniencePremiums } from '@/lib/intelligence/convenience-premium';
+import { computeHealthScorecard } from '@/lib/intelligence/health-scorecard';
+import { generateRecommendations } from '@/lib/intelligence/recommendations';
+import { computeSubscriptionData } from '@/lib/subscriptions';
 
-function getPeriodStartDate(period: PeriodOption): Date | null {
+// Categories that represent internal money movement — not real income or spending
+const INTERNAL_CATEGORIES = new Set(['Transfers', 'Savings & Investments']);
+
+// Only salary counts as household income — refunds, transfers in, rewards etc. are excluded
+const INCOME_CATEGORIES = new Set(['Salary']);
+
+export interface SalaryCycle {
+  id: string;    // 'cycle-2026-02'
+  label: string; // 'Feb 2026'
+  start: string; // '2026-02-26' ISO date
+  end: string;   // '2026-03-25' ISO date
+}
+
+// Salary cycle boundary: 23rd of each month.
+// UK employers pay "around the 26th" but shift earlier for weekends/holidays.
+// Dec 25 = Christmas, Dec 26 = Boxing Day → salary lands Dec 23-24.
+// Using the 23rd gives a 3-day buffer to catch early payments.
+const CYCLE_START_DAY = 23;
+
+/** Salary cycles run from the 23rd of one month to the 22nd of the next */
+function buildCycle(year: number, month: number): SalaryCycle {
+  // month is 1-based
+  const startDate = setDate(new Date(year, month - 1, 1), CYCLE_START_DAY);
+  const endDate = setDate(addMonths(new Date(year, month - 1, 1), 1), CYCLE_START_DAY - 1);
+  const id = `cycle-${format(startDate, 'yyyy-MM')}`;
+  const label = format(startDate, 'MMM yyyy');
+  return {
+    id,
+    label,
+    start: format(startDate, 'yyyy-MM-dd'),
+    end: format(endDate, 'yyyy-MM-dd'),
+  };
+}
+
+function getCurrentCycle(): SalaryCycle {
   const now = new Date();
-  switch (period) {
-    case 'last30':
-      return startOfDay(subDays(now, 30));
-    case 'last90':
-      return startOfDay(subDays(now, 90));
-    case 'last6m':
-      return startOfDay(subMonths(now, 6));
-    case 'last12m':
-      return startOfDay(subMonths(now, 12));
-    case 'all':
-      return null;
+  const cycleStartMonth = now.getDate() >= CYCLE_START_DAY
+    ? now
+    : subMonths(now, 1);
+  return buildCycle(cycleStartMonth.getFullYear(), cycleStartMonth.getMonth() + 1);
+}
+
+function getAvailableCycles(transactions: Transaction[]): SalaryCycle[] {
+  if (transactions.length === 0) return [getCurrentCycle()];
+
+  const dates = transactions.map((t) => t.date).sort();
+  const earliest = parseISO(dates[0]);
+
+  const startYear = earliest.getFullYear();
+  const startMonth = earliest.getMonth() + 1;
+  const cycleStartMonth = earliest.getDate() >= CYCLE_START_DAY
+    ? new Date(startYear, startMonth - 1, 1)
+    : subMonths(new Date(startYear, startMonth - 1, 1), 1);
+
+  const current = getCurrentCycle();
+  const cycles: SalaryCycle[] = [];
+  let cursor = cycleStartMonth;
+
+  while (true) {
+    const cycle = buildCycle(cursor.getFullYear(), cursor.getMonth() + 1);
+    cycles.push(cycle);
+    if (cycle.id === current.id) break;
+    cursor = addMonths(cursor, 1);
+    // Safety: don't go past current
+    if (cursor > new Date()) break;
   }
+
+  return cycles.reverse(); // most recent first
+}
+
+function getCycleBoundaries(period: PeriodOption): { start: string | null; end: string | null } {
+  if (period === 'all') return { start: null, end: null };
+  if (period.startsWith('cycle-')) {
+    const [, yearStr, monthStr] = period.split('-');
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10);
+    const cycle = buildCycle(year, month);
+    return { start: cycle.start, end: cycle.end };
+  }
+  return { start: null, end: null };
 }
 
 export function useTransactions() {
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [period, setPeriod] = useState<PeriodOption>('last30');
+  const [period, setPeriod] = useState<PeriodOption>(getCurrentCycle().id);
   const loadedRef = useRef(false);
 
   useEffect(() => {
@@ -39,6 +114,16 @@ export function useTransactions() {
       loadedRef.current = true;
       // Re-apply keyword rules on load so new/updated rules take effect
       recategorizeAll();
+
+      // Auto-detect account types and reclassify transfers
+      const txns = getTransactions();
+      const existingTypes = getAccountTypes();
+      const detectedTypes = detectAllAccountTypes(txns, existingTypes);
+      saveAccountTypes(detectedTypes);
+
+      const { transactions: reclassified, changed } = reclassifyTransfers(txns, detectedTypes);
+      if (changed > 0) saveTransactions(reclassified);
+
       setAllTransactions(getTransactions());
       setLoaded(true);
     }
@@ -81,27 +166,32 @@ export function useTransactions() {
     setAllTransactions([]);
   }, []);
 
-  // Derive period date boundaries
-  const startDate = useMemo(() => {
-    const d = getPeriodStartDate(period);
-    return d ? d.toISOString() : null;
-  }, [period]);
+  // Available salary cycles, derived from all loaded transactions
+  const availableCycles = useMemo(
+    () => getAvailableCycles(allTransactions),
+    [allTransactions]
+  );
 
-  const endDate = useMemo(() => new Date().toISOString(), []);
+  // Derive period date boundaries from cycle or 'all'
+  const { start: startDate, end: endDate } = useMemo(
+    () => getCycleBoundaries(period),
+    [period]
+  );
 
   // Filtered transactions based on the active period
   const filteredTransactions = useMemo(() => {
-    if (!startDate) return allTransactions;
-    return allTransactions.filter((t) => t.date >= startDate);
-  }, [allTransactions, startDate]);
-
-  // Categories that represent internal money movement — not real income or spending
-  const INTERNAL_CATEGORIES = new Set(['Transfers', 'Savings & Investments']);
+    if (!startDate && !endDate) return allTransactions;
+    return allTransactions.filter((t) => {
+      if (startDate && t.date < startDate) return false;
+      if (endDate && t.date > endDate) return false;
+      return true;
+    });
+  }, [allTransactions, startDate, endDate]);
 
   // All computed values use filteredTransactions
   const totalIncome = useMemo(
     () => filteredTransactions
-      .filter((t) => t.amount > 0 && !INTERNAL_CATEGORIES.has(t.category))
+      .filter((t) => t.amount > 0 && INCOME_CATEGORIES.has(t.category))
       .reduce((s, t) => s + t.amount, 0),
     [filteredTransactions]
   );
@@ -176,7 +266,7 @@ export function useTransactions() {
       const m = map.get(month)!;
       const isInternal = INTERNAL_CATEGORIES.has(t.category);
       if (t.amount > 0) {
-        if (!isInternal) m.income += t.amount;
+        if (INCOME_CATEGORIES.has(t.category)) m.income += t.amount;
       } else {
         if (!isInternal) {
           m.spending += Math.abs(t.amount);
@@ -205,6 +295,57 @@ export function useTransactions() {
     [filteredTransactions]
   );
 
+  // ─── Account hierarchy ──────────────────────────────────────────
+  const accountTypes = useMemo(() => getAccountTypes(), [allTransactions]);
+
+  // ─── Intelligence: salary flow ──────────────────────────────────
+  const currentCycleMeta = useMemo(() => {
+    if (period === 'all') return null;
+    return availableCycles.find((c) => c.id === period) ?? null;
+  }, [period, availableCycles]);
+
+  const salaryFlow = useMemo((): SalaryFlow | null => {
+    if (!currentCycleMeta) return null;
+    return computeSalaryFlow(allTransactions, accountTypes, currentCycleMeta);
+  }, [allTransactions, accountTypes, currentCycleMeta]);
+
+  // ─── Intelligence: category creep ───────────────────────────────
+  const categoryCreep = useMemo((): CategoryCreep[] => {
+    return detectCategoryCreep(allTransactions, availableCycles);
+  }, [allTransactions, availableCycles]);
+
+  // ─── Intelligence: convenience premium ──────────────────────────
+  const conveniencePremium = useMemo(
+    () => detectConveniencePremiums(filteredTransactions),
+    [filteredTransactions]
+  );
+
+  // ─── Intelligence: health scorecard ─────────────────────────────
+  const healthScorecard = useMemo((): HealthScorecard | null => {
+    if (!salaryFlow) return null;
+    return computeHealthScorecard(
+      salaryFlow,
+      categoryCreep,
+      conveniencePremium.totalPremium,
+      totalIncome,
+      totalSpending,
+      essentialSpending
+    );
+  }, [salaryFlow, categoryCreep, conveniencePremium.totalPremium, totalIncome, totalSpending, essentialSpending]);
+
+  // ─── Intelligence: recommendations ──────────────────────────────
+  const recommendations = useMemo((): Recommendation[] => {
+    if (!healthScorecard || !salaryFlow) return [];
+    const { potentialDuplicates: duplicates } = computeSubscriptionData(allTransactions);
+    return generateRecommendations(
+      healthScorecard,
+      categoryCreep,
+      conveniencePremium,
+      salaryFlow,
+      duplicates
+    );
+  }, [healthScorecard, salaryFlow, categoryCreep, conveniencePremium, allTransactions]);
+
   return {
     // Unfiltered (for upload page etc.)
     transactions: filteredTransactions,
@@ -212,6 +353,7 @@ export function useTransactions() {
     // Period filter
     period,
     setPeriod,
+    availableCycles,
     startDate,
     endDate,
     filteredTransactions,
@@ -232,5 +374,13 @@ export function useTransactions() {
     monthlyBreakdowns,
     dateRange,
     uncategorizedCount,
+    // Account hierarchy
+    accountTypes,
+    // Intelligence
+    salaryFlow,
+    categoryCreep,
+    conveniencePremium,
+    healthScorecard,
+    recommendations,
   };
 }

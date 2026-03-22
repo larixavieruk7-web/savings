@@ -11,6 +11,7 @@ All AI calls must go through these routes — never call OpenAI directly from th
 | `insights/` | Anomaly detection + AI savings suggestions |
 | `chat/` | Conversational AI with spending summary + knowledge bank context |
 | `parse-csv/` | Universal CSV parser with GPT column-detection fallback |
+| `analyse/` | AI monthly financial analysis — sends full cycle data to GPT for structured pushback |
 
 ## Cost Control (key shared with Distil — be frugal)
 - `categorize`: ~$0.01-0.03 per batch of 150 transactions

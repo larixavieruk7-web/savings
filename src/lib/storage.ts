@@ -1,6 +1,6 @@
 'use client';
 
-import type { Transaction, CategoryRule, SavingsTarget } from '@/types';
+import type { Transaction, CategoryRule, SavingsTarget, AccountConfig } from '@/types';
 import { categorize } from '@/lib/categories';
 
 const KEYS = {
@@ -11,6 +11,9 @@ const KEYS = {
   customCategories: 'savings_custom_colors',
   accountNicknames: 'savings_account_nicknames',
   knowledgeBank: 'savings_knowledge_bank',
+  accountTypes: 'savings_account_types',
+  dismissedRecommendations: 'savings_dismissed_recommendations',
+  monthlyAnalyses: 'savings_monthly_analyses',
 } as const;
 
 // ─── Transactions ────────────────────────────────────────────────
@@ -67,14 +70,16 @@ export function recategorizeAll(): { updated: number; total: number } {
     // Skip manual corrections — the user explicitly set these
     if (t.categorySource === 'manual') continue;
 
-    const { category, subcategory } = categorize(
+    const { category, subcategory, isEssential } = categorize(
       t.rawDescription || t.description,
       customRules
     );
 
-    if (category !== t.category) {
+    const changed = category !== t.category || t.isEssential !== isEssential;
+    if (changed) {
       t.category = category;
       t.subcategory = subcategory;
+      t.isEssential = isEssential;
       t.categorySource = 'rule';
       updated++;
     }
@@ -241,4 +246,90 @@ export function addKnowledgeEntry(entry: Omit<KnowledgeEntry, 'id' | 'createdAt'
 export function deleteKnowledgeEntry(id: string): void {
   const entries = getKnowledgeEntries().filter((e) => e.id !== id);
   saveKnowledgeEntries(entries);
+}
+
+// ─── Account Types (hub/credit-card/savings hierarchy) ──────────
+
+export function getAccountTypes(): AccountConfig[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(KEYS.accountTypes);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveAccountTypes(configs: AccountConfig[]): void {
+  localStorage.setItem(KEYS.accountTypes, JSON.stringify(configs));
+}
+
+export function setAccountType(rawName: string, type: AccountConfig['type']): void {
+  const configs = getAccountTypes();
+  const idx = configs.findIndex((c) => c.rawName === rawName);
+  if (idx >= 0) {
+    configs[idx] = { rawName, type, autoDetected: false };
+  } else {
+    configs.push({ rawName, type, autoDetected: false });
+  }
+  saveAccountTypes(configs);
+}
+
+// ─── Dismissed Recommendations ──────────────────────────────────
+
+export function getDismissedRecommendations(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(KEYS.dismissedRecommendations);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function dismissRecommendation(id: string): void {
+  const existing = getDismissedRecommendations();
+  if (!existing.includes(id)) {
+    existing.push(id);
+    localStorage.setItem(KEYS.dismissedRecommendations, JSON.stringify(existing));
+  }
+}
+
+// ─── Monthly AI Analyses ────────────────────────────────────────
+
+export interface StoredAnalysis {
+  cycleId: string;
+  analysedAt: string; // ISO date
+  analysis: Record<string, unknown>;
+}
+
+export function getMonthlyAnalyses(): StoredAnalysis[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(KEYS.monthlyAnalyses);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveMonthlyAnalysis(cycleId: string, analysis: Record<string, unknown>): void {
+  const existing = getMonthlyAnalyses();
+  // Replace existing for same cycle, or add new
+  const idx = existing.findIndex((a) => a.cycleId === cycleId);
+  const entry: StoredAnalysis = {
+    cycleId,
+    analysedAt: new Date().toISOString(),
+    analysis,
+  };
+  if (idx >= 0) {
+    existing[idx] = entry;
+  } else {
+    existing.unshift(entry);
+  }
+  localStorage.setItem(KEYS.monthlyAnalyses, JSON.stringify(existing));
+}
+
+export function getAnalysisForCycle(cycleId: string): StoredAnalysis | null {
+  return getMonthlyAnalyses().find((a) => a.cycleId === cycleId) ?? null;
 }

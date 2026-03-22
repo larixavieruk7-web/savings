@@ -133,6 +133,10 @@ export default function AskPage() {
     discretionarySpending,
     loaded,
     transactions,
+    healthScorecard,
+    categoryCreep,
+    recommendations,
+    salaryFlow,
   } = useTransactionContext();
 
   const scrollToBottom = useCallback(() => {
@@ -200,6 +204,36 @@ export default function AskPage() {
       accountNicknames,
       potentialDuplicateSubscriptions,
       recurringMerchants,
+      // Intelligence layer
+      healthScorecard: healthScorecard ? {
+        overallScore: healthScorecard.overallScore,
+        verdict: healthScorecard.verdict,
+        highlights: healthScorecard.highlights,
+        warnings: healthScorecard.warnings,
+        metrics: {
+          savingsRate: healthScorecard.metrics.savingsRate,
+          essentialRatio: healthScorecard.metrics.essentialRatio,
+          creepCount: healthScorecard.metrics.creepCount,
+          unaccountedPct: healthScorecard.metrics.unaccountedPct,
+        },
+      } : undefined,
+      categoryCreep: categoryCreep.length > 0 ? categoryCreep : undefined,
+      recommendations: recommendations.length > 0 ? recommendations.map((r) => ({
+        severity: r.severity,
+        title: r.title,
+        detail: r.detail,
+        potentialSaving: r.potentialSaving,
+        actionType: r.actionType,
+      })) : undefined,
+      salaryFlow: salaryFlow ? {
+        totalSalary: salaryFlow.totalSalary,
+        creditCardPayments: salaryFlow.creditCardPayments,
+        savingsContributions: salaryFlow.savingsContributions,
+        directDebits: salaryFlow.directDebits,
+        directSpending: salaryFlow.directSpending,
+        creditCardSpending: salaryFlow.creditCardSpending,
+        unaccounted: salaryFlow.unaccounted,
+      } : undefined,
     };
   }, [
     categoryBreakdown,
@@ -210,6 +244,10 @@ export default function AskPage() {
     essentialSpending,
     discretionarySpending,
     buildRecurringByAccount,
+    healthScorecard,
+    categoryCreep,
+    recommendations,
+    salaryFlow,
   ]);
 
   const sendMessage = useCallback(

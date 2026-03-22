@@ -64,7 +64,68 @@ export interface MonthlyBreakdown {
   byCategory: Record<string, number>;
 }
 
-export type PeriodOption = 'last30' | 'last90' | 'last6m' | 'last12m' | 'all';
+// 'all' = all time; 'cycle-YYYY-MM' = salary cycle starting on 26th of that month
+export type PeriodOption = string;
+
+// ─── Account Hierarchy ──────────────────────────────────────────
+
+export type AccountType = 'hub' | 'credit-card' | 'savings' | 'unknown';
+
+export interface AccountConfig {
+  rawName: string;       // matches Transaction.accountName
+  type: AccountType;
+  autoDetected: boolean; // true if inferred, false if user-set
+}
+
+// ─── Intelligence ───────────────────────────────────────────────
+
+export interface SalaryFlow {
+  cycleId: string;
+  totalSalary: number;           // pence
+  creditCardPayments: number;    // pence (hub → credit cards)
+  savingsContributions: number;  // pence (hub → savings)
+  directDebits: number;          // pence (D/D type from hub)
+  directSpending: number;        // pence (other hub outflows excl transfers)
+  creditCardSpending: number;    // pence (actual spending on credit cards)
+  unaccounted: number;           // salary - sum of above
+}
+
+export interface CategoryCreep {
+  category: string;
+  currentCycleSpend: number;     // pence
+  rollingAverage: number;        // pence (3-cycle rolling average)
+  percentIncrease: number;       // e.g. 35.2 = +35.2% above rolling average
+  trend: 'rising' | 'stable' | 'falling';
+}
+
+export interface HealthScorecard {
+  cycleId: string;
+  overallScore: number;          // 0-100
+  verdict: 'Strong month' | 'Watch spending' | 'Danger zone';
+  metrics: {
+    savingsRate: number;
+    savingsRateScore: number;    // 0-25
+    essentialRatio: number;
+    essentialScore: number;      // 0-25
+    creepCount: number;
+    creepScore: number;          // 0-25
+    unaccountedPct: number;
+    flowScore: number;           // 0-25
+  };
+  highlights: string[];          // 2-3 good things
+  warnings: string[];            // 0-3 problem areas
+}
+
+export interface Recommendation {
+  id: string;
+  severity: 'info' | 'warning' | 'urgent';
+  title: string;
+  detail: string;
+  category?: string;
+  merchant?: string;
+  potentialSaving: number;       // pence per cycle
+  actionType: 'reduce' | 'switch' | 'cancel' | 'review' | 'celebrate';
+}
 
 export type CategoryName =
   | 'Housing'
