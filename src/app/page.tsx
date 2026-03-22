@@ -15,6 +15,7 @@ import { HealthScorecardWidget } from '@/components/dashboard/health-scorecard';
 import { RecommendationsPanel } from '@/components/dashboard/recommendations-panel';
 import { SalaryFlowChart } from '@/components/dashboard/salary-flow';
 import { AIAnalysis } from '@/components/dashboard/ai-analysis';
+import { OverspendingAlert, StopTheBleeding } from '@/components/dashboard/overspending-alert';
 import {
   PieChart,
   Pie,
@@ -47,6 +48,7 @@ export default function DashboardHome() {
     healthScorecard,
     recommendations,
     salaryFlow,
+    categoryCreep,
   } = useTransactionContext();
 
   const [showSpendingDrilldown, setShowSpendingDrilldown] = useState(false);
@@ -117,6 +119,13 @@ export default function DashboardHome() {
 
       {/* Duplicate subscription warning */}
       <DuplicateSubscriptionAlert duplicates={potentialDuplicates} />
+
+      {/* Overspending alert — big red banner when spending > income */}
+      <OverspendingAlert
+        totalIncome={totalIncome}
+        totalSpending={totalSpending}
+        monthlyBreakdowns={monthlyBreakdowns}
+      />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -245,7 +254,7 @@ export default function DashboardHome() {
         </div>
       </div>
 
-      {/* Top Spending Categories */}
+      {/* Top Spending Categories (with creep badges) */}
       <div className="bg-card border border-card-border rounded-xl p-6">
         <h3 className="text-lg font-semibold text-foreground mb-4">
           Top Spending Categories
@@ -254,12 +263,31 @@ export default function DashboardHome() {
           {categoryBreakdown.slice(0, 10).map(({ category, amount }) => {
             const pct = (amount / totalSpending) * 100;
             const color = CATEGORY_COLORS[category as CategoryName] || '#a1a1aa';
+            const creep = categoryCreep.find((c) => c.category === category);
+            const showCreep = creep && Math.abs(creep.percentIncrease) > 10;
+            const isUrgent = creep && creep.percentIncrease > 50;
+
             return (
               <div key={category}>
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-2">
                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
                     <span className="text-sm text-foreground">{category}</span>
+                    {showCreep && creep && (
+                      <span
+                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                          creep.trend === 'rising'
+                            ? isUrgent
+                              ? 'bg-red-500/20 text-red-400 animate-pulse'
+                              : 'bg-red-500/15 text-red-400'
+                            : 'bg-green-500/15 text-green-400'
+                        }`}
+                        title={`${creep.trend === 'rising' ? 'Up' : 'Down'} vs 3-cycle avg (${formatGBP(creep.rollingAverage)})`}
+                      >
+                        {creep.trend === 'rising' ? '+' : ''}
+                        {creep.percentIncrease.toFixed(0)}%
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="text-sm text-muted">{pct.toFixed(1)}%</span>
@@ -277,6 +305,15 @@ export default function DashboardHome() {
           })}
         </div>
       </div>
+
+      {/* Where to Cut — ranks discretionary spending by cuttability */}
+      <StopTheBleeding
+        transactions={transactions}
+        totalIncome={totalIncome}
+        totalSpending={totalSpending}
+        categoryBreakdown={categoryBreakdown}
+        categoryCreep={categoryCreep}
+      />
 
       {/* Essential vs Discretionary Split */}
       <EssentialVsDiscretionary

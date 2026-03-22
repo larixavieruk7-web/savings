@@ -6,10 +6,11 @@ import {
   getAccountNicknames,
   saveAccountNickname,
   getDisplayName,
+  setAccountType,
 } from '@/lib/storage';
 import { formatGBP } from '@/lib/utils';
 import { CATEGORY_COLORS } from '@/lib/categories';
-import type { Transaction } from '@/types';
+import type { Transaction, AccountType, AccountConfig } from '@/types';
 import {
   Wallet,
   Pencil,
@@ -20,6 +21,10 @@ import {
   AlertTriangle,
   AlertCircle,
   Copy,
+  Landmark,
+  CreditCard,
+  PiggyBank,
+  HelpCircle,
 } from 'lucide-react';
 import { format, parseISO, differenceInDays } from 'date-fns';
 
@@ -275,12 +280,121 @@ function InlineNicknameEditor({
   );
 }
 
+// ─── Account Type Badge ──────────────────────────────────────────
+
+const ACCOUNT_TYPE_CONFIG: Record<
+  AccountType,
+  { label: string; color: string; bgColor: string; borderColor: string; icon: typeof Landmark }
+> = {
+  hub: {
+    label: 'Hub',
+    color: 'text-indigo-400',
+    bgColor: 'bg-indigo-500/15',
+    borderColor: 'border-indigo-500/25',
+    icon: Landmark,
+  },
+  'credit-card': {
+    label: 'Credit Card',
+    color: 'text-amber-400',
+    bgColor: 'bg-amber-500/15',
+    borderColor: 'border-amber-500/25',
+    icon: CreditCard,
+  },
+  savings: {
+    label: 'Savings',
+    color: 'text-emerald-400',
+    bgColor: 'bg-emerald-500/15',
+    borderColor: 'border-emerald-500/25',
+    icon: PiggyBank,
+  },
+  unknown: {
+    label: 'Unknown',
+    color: 'text-zinc-400',
+    bgColor: 'bg-zinc-500/15',
+    borderColor: 'border-zinc-500/25',
+    icon: HelpCircle,
+  },
+};
+
+const ACCOUNT_TYPE_OPTIONS: AccountType[] = ['hub', 'credit-card', 'savings', 'unknown'];
+
+function AccountTypeBadge({
+  rawName,
+  accountTypes,
+  onTypeChange,
+}: {
+  rawName: string;
+  accountTypes: AccountConfig[];
+  onTypeChange: () => void;
+}) {
+  const [showDropdown, setShowDropdown] = useState(false);
+  const config = accountTypes.find((c) => c.rawName === rawName);
+  const currentType: AccountType = config?.type ?? 'unknown';
+  const isAutoDetected = config?.autoDetected !== false;
+  const typeConfig = ACCOUNT_TYPE_CONFIG[currentType];
+  const Icon = typeConfig.icon;
+
+  const handleChange = (newType: AccountType) => {
+    setAccountType(rawName, newType);
+    onTypeChange();
+    setShowDropdown(false);
+  };
+
+  return (
+    <div className="relative" onClick={(e) => e.stopPropagation()}>
+      <button
+        onClick={() => setShowDropdown(!showDropdown)}
+        className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md border text-xs font-medium transition-colors hover:brightness-125 ${typeConfig.bgColor} ${typeConfig.borderColor} ${typeConfig.color}`}
+      >
+        <Icon className="h-3 w-3" />
+        <span>{typeConfig.label}</span>
+        {isAutoDetected && (
+          <span className="opacity-60 text-[10px]">(auto)</span>
+        )}
+        <ChevronDown className="h-2.5 w-2.5 opacity-60" />
+      </button>
+
+      {showDropdown && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setShowDropdown(false)}
+          />
+          <div className="absolute top-full left-0 mt-1 z-50 bg-[#111118] border border-card-border rounded-lg shadow-xl py-1 min-w-[160px]">
+            {ACCOUNT_TYPE_OPTIONS.map((type) => {
+              const opt = ACCOUNT_TYPE_CONFIG[type];
+              const OptIcon = opt.icon;
+              const isSelected = type === currentType;
+              return (
+                <button
+                  key={type}
+                  onClick={() => handleChange(type)}
+                  className={`w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors ${
+                    isSelected
+                      ? `${opt.bgColor} ${opt.color} font-medium`
+                      : 'text-muted hover:text-foreground hover:bg-card-border/30'
+                  }`}
+                >
+                  <OptIcon className={`h-3.5 w-3.5 ${isSelected ? opt.color : ''}`} />
+                  <span>{opt.label}</span>
+                  {isSelected && <Check className="h-3 w-3 ml-auto" />}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────
 
 export default function AccountsPage() {
-  const { transactions, loaded } = useTransactionContext();
+  const { transactions, loaded, accountTypes, reload } = useTransactionContext();
   const [expandedAccount, setExpandedAccount] = useState<string | null>(null);
   const [, setNicknameVersion] = useState(0); // force re-render on nickname change
+  const [, setTypeVersion] = useState(0); // force re-render on type change
 
   const summaries = useMemo(
     () => buildAccountSummaries(transactions),
@@ -295,6 +409,11 @@ export default function AccountsPage() {
   const handleNicknameSave = useCallback(() => {
     setNicknameVersion((v) => v + 1);
   }, []);
+
+  const handleTypeChange = useCallback(() => {
+    setTypeVersion((v) => v + 1);
+    reload(); // reload transactions to re-run transfer reclassification
+  }, [reload]);
 
   const toggleExpand = (rawName: string) => {
     setExpandedAccount((prev) => (prev === rawName ? null : rawName));
@@ -371,7 +490,12 @@ export default function AccountsPage() {
                     {currentDisplayName !== account.rawName && (
                       <p className="text-xs text-muted truncate">{account.rawName}</p>
                     )}
-                    <div className="mt-1" onClick={(e) => e.stopPropagation()}>
+                    <div className="mt-1.5 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                      <AccountTypeBadge
+                        rawName={account.rawName}
+                        accountTypes={accountTypes}
+                        onTypeChange={handleTypeChange}
+                      />
                       <InlineNicknameEditor
                         rawName={account.rawName}
                         initialDisplayName={currentDisplayName}
