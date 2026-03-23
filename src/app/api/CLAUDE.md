@@ -17,6 +17,7 @@ All AI calls must go through these routes — never call OpenAI directly from th
 - `categorize`: ~$0.01-0.03 per batch of 150 transactions
 - `insights`: ~$0.01-0.02 per run
 - `chat`: ~$0.01-0.03 per message
+- `analyse`: ~$0.02-0.05 per analysis (richer prompt, cached per cycle in localStorage)
 - Always send spending **summaries** not raw transaction arrays
 - Full import + insights run should stay under $0.20 total
 

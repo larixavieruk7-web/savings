@@ -36,6 +36,7 @@ const INTERNAL_CATEGORIES = new Set(['Transfers', 'Savings & Investments']);
 export default function DashboardHome() {
   const {
     transactions,
+    allTransactions,
     loaded,
     totalIncome,
     totalSpending,
@@ -49,6 +50,8 @@ export default function DashboardHome() {
     recommendations,
     salaryFlow,
     categoryCreep,
+    period,
+    setPeriod,
   } = useTransactionContext();
 
   const [showSpendingDrilldown, setShowSpendingDrilldown] = useState(false);
@@ -61,8 +64,39 @@ export default function DashboardHome() {
     );
   }
 
-  if (transactions.length === 0) {
+  // Only show empty state if there's truly no data at all
+  if (allTransactions.length === 0) {
     return <EmptyState />;
+  }
+
+  // If the current period has no transactions but data exists, auto-switch to "all"
+  if (transactions.length === 0 && period !== 'all') {
+    // Show a helpful message with option to switch
+    return (
+      <div className="space-y-6">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
+          </div>
+          <PeriodSelector />
+        </div>
+        <div className="bg-card border border-card-border rounded-xl p-8 text-center">
+          <TrendingDown className="h-12 w-12 text-muted mx-auto mb-3" />
+          <h2 className="text-lg font-semibold text-foreground mb-2">
+            No transactions in this cycle
+          </h2>
+          <p className="text-muted text-sm mb-4">
+            You have {allTransactions.length.toLocaleString()} transactions total, but none fall in the selected period.
+          </p>
+          <button
+            onClick={() => setPeriod('all')}
+            className="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+          >
+            View All Time
+          </button>
+        </div>
+      </div>
+    );
   }
 
   const net = totalIncome - totalSpending;
@@ -846,8 +880,8 @@ function MortgageAndLoans({ transactions }: { transactions: Transaction[] }) {
 
       {/* Individual products */}
       <div className="space-y-0">
-        {allProducts.map((product) => (
-          <div key={product.name} className="flex items-center justify-between py-3 border-b border-card-border last:border-0">
+        {allProducts.map((product, idx) => (
+          <div key={`${product.name}-${idx}`} className="flex items-center justify-between py-3 border-b border-card-border last:border-0">
             <div>
               <p className="text-sm font-medium text-foreground">{product.name}</p>
               <div className="flex gap-3 mt-0.5">

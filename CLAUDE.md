@@ -61,10 +61,13 @@ When context is getting long (many tool calls, large file reads), proactively:
 ## ARCHITECTURE ESSENTIALS
 
 - **Storage**: localStorage only — no Supabase, no DB (see `src/lib/CLAUDE.md` for key names)
-- **AI**: Server-side only via `src/app/api/` routes (categorize, insights, chat, parse-csv)
+- **AI**: Server-side only via `src/app/api/` routes (categorize, insights, chat, parse-csv, analyse)
 - **CSV sources**: NatWest + Amex — **different sign conventions** (see `src/lib/csv/CLAUDE.md`)
 - **Dedup**: Transaction IDs include account number to handle multi-account CSVs
 - **Dates**: Always stored as ISO 8601 strings
+- **Account hierarchy**: Hub (salary) → Credit cards + Savings (spokes) — auto-detected, user-overridable
+- **Intelligence**: Rule-based scorecard + creep + recommendations in `src/lib/intelligence/`, GPT analysis via `/api/analyse`
+- **Salary cycles**: Run 23rd–22nd (not calendar months) — `useTransactions.ts` handles boundaries
 
 ---
 
@@ -83,7 +86,8 @@ When context is getting long (many tool calls, large file reads), proactively:
 | Folder | Auto-loaded context |
 |--------|---------------------|
 | `src/lib/csv/` | CSV format specs, sign conventions, NatWest-specific merchant rules |
-| `src/lib/` | localStorage key names, categorization pipeline, storage patterns |
+| `src/lib/` | localStorage key names, categorization pipeline, storage patterns, account hierarchy, money flow, intelligence layer |
+| `src/lib/intelligence/` | Health scorecard, category creep, convenience premiums, recommendations engine |
 | `src/app/api/` | OpenAI cost control, batch sizes, retry utility |
 
 ---
