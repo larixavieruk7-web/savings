@@ -2,6 +2,31 @@
 
 ## HARD GATES
 
+### Ownership & Isolation — NEVER Cross Boundaries
+
+This project belongs to **Larissa** (larixavieruk7-web). The Claude Code account is shared with Gus (Haisem), who has his own separate projects (e.g., Distil).
+
+**Larissa's resources (THIS project — the ONLY ones Claude may touch):**
+- **GitHub**: `larixavieruk7-web/savings`
+- **Supabase**: project ref `ekqpsozlqjmjlwzzpyxp` (https://ekqpsozlqjmjlwzzpyxp.supabase.co)
+- **Vercel**: `savings-lovat.vercel.app` (team: `larixavieruk7-1666s-projects`)
+
+**Off-limits (Gus's / any other account):**
+- Any Supabase project that is NOT `ekqpsozlqjmjlwzzpyxp`
+- Any Vercel project that is NOT `savings-lovat.vercel.app`
+- Any GitHub repo that is NOT `larixavieruk7-web/savings`
+
+**Tooling split:**
+- **MCP** (Supabase/Vercel) = authed to Gus's account — DO NOT USE for this project
+- **CLI** (`npx supabase`, `vercel`) = authed to Larissa's account — USE THESE for all Supabase/Vercel operations
+
+**Rules:**
+- NEVER use MCP tools (`mcp__claude_ai_Supabase__*`, `mcp__claude_ai_Vercel__*`) for this project
+- ALWAYS use CLI commands (`npx supabase`, `vercel`) for Supabase/Vercel operations
+- NEVER push to any repo other than `larixavieruk7-web/savings`
+- If an MCP tool is accidentally invoked and returns data from Gus's projects, STOP and warn the user
+- The OpenAI API key is shared — remain cost-conscious but it is the ONLY shared resource
+
 ### Money Invariants — NEVER Violate
 - Amounts stored as **integers (pence)** — NEVER floats
 - **Negative = money out, positive = money in** — NEVER reverse this convention
@@ -105,6 +130,49 @@ npm run dev        # http://localhost:3000
 npm run build
 npm run lint
 ```
+
+---
+
+## EVOLUTION PATTERNS (reference implementations)
+
+When the project is ready to evolve from localStorage-only to a hosted, authenticated app, reference implementations are in `docs/patterns/`:
+
+| Pattern | Location | Purpose |
+|---------|----------|---------|
+| Supabase Auth (OTP) | `docs/patterns/supabase-auth/` | Login page, callback, middleware, CSRF, Supabase client/server |
+| localStorage → Supabase | `docs/patterns/supabase-migration/` | SQL tables for every localStorage key, RLS policies, migration strategy |
+| PWA | `docs/patterns/pwa/` | Manifest, install hooks (iOS/Android), version check, install banner |
+| Vercel Hosting | `docs/patterns/vercel/` | vercel.json, next.config.ts with security headers, deployment guide |
+
+These are adapted from Distil's production codebase. When implementing, copy the pattern files into the appropriate `src/` locations and adapt as needed.
+
+---
+
+## CONTENT & RESEARCH TOOLS
+
+| Task | Command | Tool |
+|------|---------|------|
+| YouTube/competitor research | `/yt-research <query>` | yt-dlp |
+| Full research → deliverables | `/content-pipeline <topic>` | yt-dlp + NotebookLM |
+| Automated demo videos | `/demo-video <feature>` | Playwright + edge-tts + ffmpeg |
+
+**Research output:** `docs/research/<topic-slug>.md` and `docs/research/media/`
+
+**NotebookLM:** Run `python -m notebooklm login` if session expires. Accepts YouTube URLs, PDFs, web pages as sources. Generates briefings, podcasts, infographics, slides, quizzes, mind maps — all free.
+
+**edge-tts voices:** `en-GB-RyanNeural` (male), `en-GB-SoniaNeural` (female), `en-GB-ThomasNeural` (male)
+
+---
+
+## SKILLS & PLUGINS
+
+**Installed skills:**
+- `playwright-cli` — Browser automation for web testing, form filling, screenshots, data extraction
+
+**Claude Code plugins (install via CLI):**
+- `superpowers` — Advanced workflow: brainstorming, plan writing, TDD, debugging, code review, parallel agents
+- `skill-creator` — Create, evaluate, and package custom Claude Code skills
+- `frontend-design` — Production-grade UI design guidance before writing components
 
 ---
 

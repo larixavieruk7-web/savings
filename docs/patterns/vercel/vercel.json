@@ -1,0 +1,22 @@
+{
+  "git": {
+    "deploymentEnabled": {
+      "main": true,
+      "*": false
+    }
+  },
+  "functions": {
+    "src/app/api/categorize/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/insights/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/analyse/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/parse-csv/route.ts": {
+      "maxDuration": 60
+    }
+  }
+}
