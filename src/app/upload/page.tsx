@@ -111,7 +111,7 @@ export default function UploadPage() {
       // Merge all transactions at once for accurate dedup counts
       const allTransactions = parsed.flatMap((p) => p.transactions);
       const countBefore = existingTransactions.length;
-      const merged = addTransactions(allTransactions);
+      const merged = await addTransactions(allTransactions);
       const totalNewAdded = merged.length - countBefore;
 
       // Calculate per-file results (approximate — dedup is global)

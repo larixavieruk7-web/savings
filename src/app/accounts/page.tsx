@@ -3,7 +3,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useTransactionContext } from '@/context/transactions';
 import {
-  getAccountNicknames,
   saveAccountNickname,
   getDisplayName,
   setAccountType,

@@ -1,38 +1,41 @@
 # src/lib — Storage, Categorization, Intelligence & Supabase
 
-## Storage: localStorage (current) → Supabase (migration pending)
+## Storage: Supabase (primary) + localStorage (cache)
 
-### localStorage Keys (exact strings — do not rename without updating storage.ts)
+### Architecture (3 layers)
 ```
-savings_transactions       — Transaction[]
-savings_custom_rules       — CategoryRule[]
-savings_targets            — SavingsTarget[]
-savings_insights_cache     — cached AI insights results
-savings_custom_colors      — Record<string, string> (category name → hex color)
-savings_account_nicknames  — Record<string, string> (raw account name → friendly name)
-savings_knowledge_bank     — KnowledgeEntry[]
-savings_account_types      — AccountConfig[] (hub/credit-card/savings hierarchy)
-savings_dismissed_recommendations — string[] (dismissed recommendation IDs)
-savings_monthly_analyses   — StoredAnalysis[] (AI monthly analysis results, persisted per cycle)
+Pages/Hooks → storage.ts (orchestrator, async) → supabase/storage.ts (primary)
+                                                → storage-local.ts (cache fallback)
 ```
-All reads/writes go through `storage.ts` — never access localStorage directly in pages.
+- **`storage.ts`** — Async orchestrator. All functions return Promises. Tries Supabase first; updates localStorage cache on success; falls back to cache on failure. EXCEPTION: `getDisplayName()` stays synchronous (reads cache only).
+- **`storage-local.ts`** — Pure localStorage read/write. Only imported by `storage.ts` and `useTransactions.ts` (for instant cached display on load). Never imported by pages.
+- **`supabase/storage.ts`** — Supabase CRUD layer. All functions talk to the DB via browser client with RLS.
+- **`supabase/migration.ts`** — One-time localStorage → Supabase upload. Runs on first authenticated load; gated in `layout-shell.tsx` before `TransactionProvider` mounts.
 
-### Supabase Tables (created, migration pending — see `scripts/supabase-migration.sql`)
-Each localStorage key maps to a Supabase table with RLS (user_id isolation):
+### Supabase Tables (6 tables, RLS: household reads all, users write own)
 ```
-transactions         ← savings_transactions
-category_rules       ← savings_custom_rules
-savings_targets      ← savings_targets
-knowledge_entries    ← savings_knowledge_bank
-monthly_analyses     ← savings_monthly_analyses
-user_settings        ← savings_custom_colors + savings_account_nicknames + savings_account_types + savings_dismissed_recommendations + savings_insights_cache
+transactions         — per-row, PK on id, includes raw_description and user_note
+category_rules       — per-row, unique on (user_id, pattern)
+savings_targets      — per-row, unique on (user_id, month)
+knowledge_entries    — per-row
+monthly_analyses     — per-row, unique on (user_id, period), analysis as JSONB
+user_settings        — single row per user, JSONB columns for colors/nicknames/types/dismissed/cache
 ```
-Migration guide: `docs/patterns/supabase-migration/MIGRATION-GUIDE.md`
+
+### localStorage Keys (cache layer — managed by storage-local.ts)
+```
+savings_transactions, savings_custom_rules, savings_targets, savings_insights_cache,
+savings_custom_colors, savings_account_nicknames, savings_knowledge_bank,
+savings_account_types, savings_dismissed_recommendations, savings_monthly_analyses
+```
 
 ### Supabase Client Helpers (`src/lib/supabase/`)
 - `client.ts` — Browser-side Supabase client (use in `'use client'` components)
 - `server.ts` — Server-side Supabase client (use in API routes / Server Components)
 - `middleware.ts` — Session refresh middleware (called by root `middleware.ts`)
+- `storage.ts` — Supabase CRUD for all 6 tables
+- `migration.ts` — One-time localStorage → Supabase migration
+- `database.types.ts` — Auto-generated TypeScript types (`npx supabase gen types typescript --linked`)
 
 ## Categorization Pipeline (priority order — never skip steps)
 1. **Custom/user rules** — corrections from localStorage, matched by description substring
