@@ -16,16 +16,17 @@ This project belongs to **Larissa** (larixavieruk7-web). The Claude Code account
 - Any Vercel project that is NOT `savings-lovat.vercel.app`
 - Any GitHub repo that is NOT `larixavieruk7-web/savings`
 
-**Tooling split:**
-- **MCP** (Supabase/Vercel) = authed to Gus's account — DO NOT USE for this project
-- **CLI** (`npx supabase`, `vercel`) = authed to Larissa's account — USE THESE for all Supabase/Vercel operations
+**Tooling split (CRITICAL — enforced every session):**
+- **MCP** (`mcp__claude_ai_Supabase__*`, `mcp__claude_ai_Vercel__*`) = authed to **Gus's account** — NEVER USE for this project
+- **CLI** (`npx supabase`, `vercel`, `gh`) = authed to **Larissa's account** — ALWAYS USE for Supabase/Vercel/GitHub operations
 
 **Rules:**
-- NEVER use MCP tools (`mcp__claude_ai_Supabase__*`, `mcp__claude_ai_Vercel__*`) for this project
-- ALWAYS use CLI commands (`npx supabase`, `vercel`) for Supabase/Vercel operations
+- NEVER invoke any MCP tool starting with `mcp__claude_ai_Supabase__` or `mcp__claude_ai_Vercel__`
+- ALWAYS use CLI commands for all infrastructure operations (see CLI Runbook below)
 - NEVER push to any repo other than `larixavieruk7-web/savings`
 - If an MCP tool is accidentally invoked and returns data from Gus's projects, STOP and warn the user
 - The OpenAI API key is shared — remain cost-conscious but it is the ONLY shared resource
+- GitHub CLI path: `"/c/Program Files/GitHub CLI/gh.exe"` (use full path or `gh` if on PATH)
 
 ### Money Invariants — NEVER Violate
 - Amounts stored as **integers (pence)** — NEVER floats
@@ -78,14 +79,17 @@ When context is getting long (many tool calls, large file reads), proactively:
 ## PROJECT CONTEXT
 
 - **Household**: Larissa (MRS LARISSA DA SILVA, Amex ending -21013) and Gus (G XAVIER DA SILVA, Amex ending -21005) — both have NatWest accounts
-- **Purpose**: Personal use, single machine — localStorage only, no database, no auth
+- **Purpose**: Personal household savings dashboard — Supabase backend with OTP auth, Vercel hosting
+- **Auth**: OTP magic link only, signups disabled, 3 allowed emails: `lari_uk@gmail.com`, `larixavieruk7@gmail.com`, `gusampteam@hotmail.com`
 - **OpenAI key**: Shared with Distil project — be cost-conscious, send summaries not raw data
 
 ---
 
 ## ARCHITECTURE ESSENTIALS
 
-- **Storage**: localStorage only — no Supabase, no DB (see `src/lib/CLAUDE.md` for key names)
+- **Storage**: localStorage (current) + Supabase tables (migration in progress) — see `src/lib/CLAUDE.md` for key names
+- **Auth**: Supabase OTP via `src/lib/supabase/` + middleware at root `middleware.ts` — login at `/login`, callback at `/auth/callback`
+- **Layout**: `src/components/layout-shell.tsx` conditionally hides sidebar on auth routes
 - **AI**: Server-side only via `src/app/api/` routes (categorize, insights, chat, parse-csv, analyse)
 - **CSV sources**: NatWest + Amex — **different sign conventions** (see `src/lib/csv/CLAUDE.md`)
 - **Dedup**: Transaction IDs include account number to handle multi-account CSVs
@@ -120,8 +124,13 @@ When context is getting long (many tool calls, large file reads), proactively:
 ## ENVIRONMENT
 
 ```
-OPENAI_API_KEY=    # In .env.local (gitignored). Shared with Distil — don't burn through it.
+# .env.local (gitignored)
+OPENAI_API_KEY=              # Shared with Distil — don't burn through it
+NEXT_PUBLIC_SUPABASE_URL=    # https://ekqpsozlqjmjlwzzpyxp.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=  # Supabase anon public key
 ```
+
+All three are also set on Vercel production via `vercel env ls`.
 
 ## DEVELOPMENT
 
@@ -133,18 +142,74 @@ npm run lint
 
 ---
 
-## EVOLUTION PATTERNS (reference implementations)
+## CLI RUNBOOK — Larissa's Infrastructure
 
-When the project is ready to evolve from localStorage-only to a hosted, authenticated app, reference implementations are in `docs/patterns/`:
+**All infrastructure commands use CLIs authed to Larissa's account. NEVER use MCP tools.**
 
+### Supabase (project: `ekqpsozlqjmjlwzzpyxp`)
+```bash
+# Run SQL on remote database
+npx supabase db query --linked "SELECT ..."
+cat file.sql | npx supabase db query --linked
+
+# Push auth/config changes (edit supabase/config.toml first)
+echo "Y" | npx supabase config push
+
+# List tables
+npx supabase db query --linked "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
+
+# Check users
+npx supabase db query --linked "SELECT email FROM auth.users"
+
+# Re-login (if token expires — requires TTY, user must run via ! prefix)
+# ! npx supabase login
+```
+
+### Vercel (project: `savings_dashboard`, domain: `savings-lovat.vercel.app`)
+```bash
+# Check deployments
+vercel ls
+
+# Set/update env vars
+vercel env add VAR_NAME production --value "value" --yes
+vercel env rm VAR_NAME production --yes
+vercel env ls
+
+# Manual deploy (normally auto-deploys on git push)
+vercel --prod
+
+# Pull env vars to local .env.local
+vercel env pull .env.local
+```
+
+### GitHub (repo: `larixavieruk7-web/savings`)
+```bash
+# Push (auto-triggers Vercel deploy)
+git push origin main
+
+# Create PR
+"/c/Program Files/GitHub CLI/gh.exe" pr create --title "..." --body "..."
+
+# Check CI status
+"/c/Program Files/GitHub CLI/gh.exe" pr status
+```
+
+---
+
+## IMPLEMENTED PATTERNS & REMAINING PATTERNS
+
+**Already implemented:**
+- Supabase Auth (OTP) — `src/lib/supabase/`, `src/app/login/`, `src/app/auth/callback/`, `middleware.ts`
+- Supabase tables + RLS — 6 tables created via `scripts/supabase-migration.sql`
+- Vercel hosting — auto-deploys from `main`, env vars configured
+
+**Not yet implemented (reference patterns in `docs/patterns/`):**
 | Pattern | Location | Purpose |
 |---------|----------|---------|
-| Supabase Auth (OTP) | `docs/patterns/supabase-auth/` | Login page, callback, middleware, CSRF, Supabase client/server |
-| localStorage → Supabase | `docs/patterns/supabase-migration/` | SQL tables for every localStorage key, RLS policies, migration strategy |
+| localStorage → Supabase data migration | `docs/patterns/supabase-migration/` | Script to upload existing localStorage data to Supabase |
 | PWA | `docs/patterns/pwa/` | Manifest, install hooks (iOS/Android), version check, install banner |
-| Vercel Hosting | `docs/patterns/vercel/` | vercel.json, next.config.ts with security headers, deployment guide |
-
-These are adapted from Distil's production codebase. When implementing, copy the pattern files into the appropriate `src/` locations and adapt as needed.
+| Vercel security headers | `docs/patterns/vercel/` | vercel.json, next.config.ts with security headers |
+| CSRF protection | `docs/patterns/supabase-auth/csrf.ts` | Token-based CSRF for POST endpoints |
 
 ---
 
