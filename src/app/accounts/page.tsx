@@ -221,10 +221,10 @@ function InlineNicknameEditor({
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(initialDisplayName);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const trimmed = value.trim();
     if (trimmed && trimmed !== rawName) {
-      saveAccountNickname(rawName, trimmed);
+      await saveAccountNickname(rawName, trimmed);
       onSave(trimmed);
     }
     setEditing(false);
@@ -334,8 +334,8 @@ function AccountTypeBadge({
   const typeConfig = ACCOUNT_TYPE_CONFIG[currentType];
   const Icon = typeConfig.icon;
 
-  const handleChange = (newType: AccountType) => {
-    setAccountType(rawName, newType);
+  const handleChange = async (newType: AccountType) => {
+    await setAccountType(rawName, newType);
     onTypeChange();
     setShowDropdown(false);
   };
