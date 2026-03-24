@@ -158,8 +158,8 @@ export default function AskPage() {
     };
   }, [transactions]);
 
-  const buildContext = useCallback(() => {
-    const knowledgeEntries = getKnowledgeEntries().map((e) => ({
+  const buildContext = useCallback(async () => {
+    const knowledgeEntries = (await getKnowledgeEntries()).map((e) => ({
       date: e.date,
       title: e.title,
       description: e.description,
@@ -167,7 +167,7 @@ export default function AskPage() {
       tags: e.tags,
     }));
 
-    const accountNicknames = getAccountNicknames();
+    const accountNicknames = await getAccountNicknames();
 
     // Top 15 categories
     const categories = categoryBreakdown.slice(0, 15).map((c) => ({
@@ -266,7 +266,7 @@ export default function AskPage() {
       setIsLoading(true);
 
       try {
-        const context = buildContext();
+        const context = await buildContext();
         const history = messages.map((m) => ({
           role: m.role,
           content: m.content,

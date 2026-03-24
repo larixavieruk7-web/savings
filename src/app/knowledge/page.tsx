@@ -80,8 +80,10 @@ export default function KnowledgePage() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   useEffect(() => {
-    setEntries(getKnowledgeEntries());
-    setLoaded(true);
+    getKnowledgeEntries().then((entries) => {
+      setEntries(entries);
+      setLoaded(true);
+    });
   }, []);
 
   // All unique tags
@@ -130,13 +132,13 @@ export default function KnowledgePage() {
     return { total: entries.length, thisMonth: thisMonthCount, topTags };
   }, [entries]);
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!formTitle.trim()) return;
     const tags = formTags
       .split(',')
       .map((t) => t.trim().toLowerCase())
       .filter(Boolean);
-    const entry = addKnowledgeEntry({
+    const entry = await addKnowledgeEntry({
       date: formDate,
       title: formTitle.trim(),
       description: formDesc.trim(),
@@ -151,8 +153,8 @@ export default function KnowledgePage() {
     setFormDate(todayISO());
   };
 
-  const handleDelete = (id: string) => {
-    deleteKnowledgeEntry(id);
+  const handleDelete = async (id: string) => {
+    await deleteKnowledgeEntry(id);
     setEntries((prev) => prev.filter((e) => e.id !== id));
     setDeleteConfirm(null);
   };
@@ -166,7 +168,7 @@ export default function KnowledgePage() {
     setEditDate(entry.date.slice(0, 10));
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!editId || !editTitle.trim()) return;
     const tags = editTags
       .split(',')
@@ -185,7 +187,7 @@ export default function KnowledgePage() {
         : e
     );
     setEntries(updated);
-    saveKnowledgeEntries(updated);
+    await saveKnowledgeEntries(updated);
     setEditId(null);
   };
 
