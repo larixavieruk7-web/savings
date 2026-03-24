@@ -1,70 +1,128 @@
 'use client';
 
-import type { Transaction, CategoryRule, SavingsTarget, AccountConfig } from '@/types';
+// ═══════════════════════════════════════════════════════════════════════
+// storage.ts — Supabase-first orchestrator with localStorage cache
+//
+// Every exported function name is preserved from the original localStorage-
+// only module so consumers (hooks, pages) keep working.  All functions are
+// now async (return Promises) except getDisplayName which stays synchronous.
+//
+// Read path:  Supabase → update cache → return.  On error → return cache.
+// Write path: Supabase first → update cache only on success.
+// ═══════════════════════════════════════════════════════════════════════
+
+import type { Transaction, CategoryRule, SavingsTarget, KnowledgeEntry, AccountConfig } from '@/types';
 import { categorize } from '@/lib/categories';
 
-const KEYS = {
-  transactions: 'savings_transactions',
-  customRules: 'savings_custom_rules',
-  savingsTargets: 'savings_targets',
-  insightsCache: 'savings_insights_cache',
-  customCategories: 'savings_custom_colors',
-  accountNicknames: 'savings_account_nicknames',
-  knowledgeBank: 'savings_knowledge_bank',
-  accountTypes: 'savings_account_types',
-  dismissedRecommendations: 'savings_dismissed_recommendations',
-  monthlyAnalyses: 'savings_monthly_analyses',
-} as const;
+// ─── localStorage cache layer ──────────────────────────────────────────
+import {
+  getLocalTransactions,
+  setLocalTransactions,
+  clearLocalTransactions,
+  getLocalCustomRules,
+  setLocalCustomRules,
+  getLocalSavingsTargets,
+  setLocalSavingsTargets,
+  getLocalKnowledgeEntries,
+  setLocalKnowledgeEntries,
+  getLocalMonthlyAnalyses,
+  setLocalMonthlyAnalyses,
+  getLocalCustomColors,
+  setLocalCustomColors,
+  getLocalAccountNicknames,
+  setLocalAccountNicknames,
+  getLocalAccountTypes,
+  setLocalAccountTypes,
+  getLocalDismissedRecommendations,
+  setLocalDismissedRecommendations,
+  getLocalInsightsCache,
+  setLocalInsightsCache,
+} from '@/lib/storage-local';
 
-// ─── Transactions ────────────────────────────────────────────────
+// Re-export StoredAnalysis so consumers can import from '@/lib/storage'
+export type { StoredAnalysis } from '@/lib/storage-local';
 
-export function getTransactions(): Transaction[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(KEYS.transactions);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
+// ─── Supabase CRUD layer ───────────────────────────────────────────────
+import {
+  fetchTransactions,
+  insertNewTransactions,
+  upsertTransactions,
+  updateTransactions as supabaseUpdateTransactions,
+  deleteAllTransactions,
+  fetchCategoryRules,
+  upsertCategoryRules,
+  fetchSavingsTargets,
+  upsertSavingsTargets,
+  fetchKnowledgeEntries,
+  insertKnowledgeEntry,
+  upsertKnowledgeEntries,
+  deleteKnowledgeEntry as supabaseDeleteKnowledgeEntry,
+  fetchMonthlyAnalyses,
+  fetchAnalysisForCycle,
+  upsertMonthlyAnalysis,
+  fetchUserSettings,
+  updateUserSettings,
+} from '@/lib/supabase/storage';
+
+import type { StoredAnalysis } from '@/lib/storage-local';  // used as value type within this file
+
+// ═══════════════════════════════════════════════════════════════════════
+// TRANSACTIONS
+// ═══════════════════════════════════════════════════════════════════════
+
+export async function getTransactions(): Promise<Transaction[]> {
+  const remote = await fetchTransactions();
+  if (remote !== null) {
+    setLocalTransactions(remote);
+    return remote;
   }
+  return getLocalTransactions();
 }
 
-export function saveTransactions(transactions: Transaction[]): void {
-  localStorage.setItem(KEYS.transactions, JSON.stringify(transactions));
+export async function saveTransactions(transactions: Transaction[]): Promise<void> {
+  const ok = await upsertTransactions(transactions);
+  if (ok) setLocalTransactions(transactions);
 }
 
-/** Merge new transactions, deduplicating by id */
-export function mergeTransactions(incoming: Transaction[]): Transaction[] {
-  const existing = getTransactions();
-  const existingIds = new Set(existing.map((t) => t.id));
-  const newOnes = incoming.filter((t) => !existingIds.has(t.id));
-  const merged = [...existing, ...newOnes].sort(
-    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-  );
-  saveTransactions(merged);
-  return merged;
+/** Merge new transactions, deduplicating by id (ON CONFLICT DO NOTHING) */
+export async function mergeTransactions(incoming: Transaction[]): Promise<Transaction[]> {
+  await insertNewTransactions(incoming);
+  const all = await getTransactions();
+  return all;
 }
 
 /** Update specific transactions (e.g., after AI categorization or manual correction) */
-export function updateTransactions(updates: Partial<Transaction> & { id: string }[]): Transaction[] {
-  const existing = getTransactions();
+export async function updateTransactions(
+  updates: (Partial<Transaction> & { id: string })[]
+): Promise<Transaction[]> {
+  const ok = await supabaseUpdateTransactions(updates);
+  if (ok) {
+    // Re-fetch full list to return updated data and refresh cache
+    return await getTransactions();
+  }
+  // Fallback: apply updates locally and return
+  const existing = getLocalTransactions();
   const updateMap = new Map(updates.map((u) => [u.id, u]));
   const updated = existing.map((t) => {
     const u = updateMap.get(t.id);
     return u ? { ...t, ...u } : t;
   });
-  saveTransactions(updated);
+  setLocalTransactions(updated);
   return updated;
 }
 
-export function clearTransactions(): void {
-  localStorage.removeItem(KEYS.transactions);
+export async function clearTransactions(): Promise<void> {
+  await deleteAllTransactions();
+  clearLocalTransactions();
 }
 
 /** Re-apply keyword rules to all transactions (skips manual corrections) */
-export function recategorizeAll(): { updated: number; total: number } {
-  const transactions = getTransactions();
-  const customRules = getCustomRules();
-  let updated = 0;
+export async function recategorizeAll(): Promise<{ updated: number; total: number }> {
+  const transactions = await getTransactions();
+  const customRules = await getCustomRules();
+  let updatedCount = 0;
+
+  const changedUpdates: (Partial<Transaction> & { id: string })[] = [];
 
   for (const t of transactions) {
     // Skip manual corrections — the user explicitly set these
@@ -77,38 +135,60 @@ export function recategorizeAll(): { updated: number; total: number } {
 
     const changed = category !== t.category || t.isEssential !== isEssential;
     if (changed) {
-      t.category = category;
-      t.subcategory = subcategory;
-      t.isEssential = isEssential;
-      t.categorySource = 'rule';
-      updated++;
+      changedUpdates.push({
+        id: t.id,
+        category,
+        subcategory,
+        isEssential,
+        categorySource: 'rule',
+      });
+      updatedCount++;
     }
   }
 
-  if (updated > 0) saveTransactions(transactions);
-  return { updated, total: transactions.length };
-}
-
-// ─── Custom Rules (user corrections) ────────────────────────────
-
-export function getCustomRules(): CategoryRule[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(KEYS.customRules);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
+  if (changedUpdates.length > 0) {
+    const ok = await supabaseUpdateTransactions(changedUpdates);
+    if (ok) {
+      // Refresh cache with the updated data
+      const refreshed = await fetchTransactions();
+      if (refreshed !== null) setLocalTransactions(refreshed);
+    } else {
+      // Fallback: apply changes to local cache directly
+      const local = getLocalTransactions();
+      const updateMap = new Map(changedUpdates.map((u) => [u.id, u]));
+      const patched = local.map((t) => {
+        const u = updateMap.get(t.id);
+        return u ? { ...t, ...u } : t;
+      });
+      setLocalTransactions(patched);
+    }
   }
+
+  return { updated: updatedCount, total: transactions.length };
 }
 
-export function saveCustomRules(rules: CategoryRule[]): void {
-  localStorage.setItem(KEYS.customRules, JSON.stringify(rules));
+// ═══════════════════════════════════════════════════════════════════════
+// CUSTOM RULES (user corrections)
+// ═══════════════════════════════════════════════════════════════════════
+
+export async function getCustomRules(): Promise<CategoryRule[]> {
+  const remote = await fetchCategoryRules();
+  if (remote !== null) {
+    setLocalCustomRules(remote);
+    return remote;
+  }
+  return getLocalCustomRules();
+}
+
+export async function saveCustomRules(rules: CategoryRule[]): Promise<void> {
+  const ok = await upsertCategoryRules(rules);
+  if (ok) setLocalCustomRules(rules);
 }
 
 /** Add a user correction rule and re-categorize matching transactions */
-export function addCustomRule(rule: CategoryRule): void {
-  const rules = getCustomRules();
-  // Replace existing rule for same pattern
+export async function addCustomRule(rule: CategoryRule): Promise<void> {
+  // 1. Save the rule (upsert on user_id + pattern)
+  const rules = await getCustomRules();
   const idx = rules.findIndex(
     (r) => r.pattern.toUpperCase() === rule.pattern.toUpperCase()
   );
@@ -117,219 +197,280 @@ export function addCustomRule(rule: CategoryRule): void {
   } else {
     rules.push(rule);
   }
-  saveCustomRules(rules);
+  await saveCustomRules(rules);
 
-  // Re-categorize all matching transactions
-  const transactions = getTransactions();
+  // 2. Re-categorize all matching transactions
+  const transactions = await getTransactions();
   const pattern = rule.pattern.toUpperCase();
-  let changed = false;
+  const changedUpdates: (Partial<Transaction> & { id: string })[] = [];
+
   for (const t of transactions) {
-    if (t.description.toUpperCase().includes(pattern) ||
-        t.merchantName?.toUpperCase().includes(pattern)) {
-      t.category = rule.category;
-      t.subcategory = rule.subcategory;
-      t.isEssential = rule.isEssential;
-      t.categorySource = 'manual';
-      t.userNote = rule.note;
-      changed = true;
+    if (
+      t.description.toUpperCase().includes(pattern) ||
+      t.merchantName?.toUpperCase().includes(pattern)
+    ) {
+      changedUpdates.push({
+        id: t.id,
+        category: rule.category,
+        subcategory: rule.subcategory,
+        isEssential: rule.isEssential,
+        categorySource: 'manual',
+        userNote: rule.note,
+      });
     }
   }
-  if (changed) saveTransactions(transactions);
-}
 
-// ─── Savings Targets ────────────────────────────────────────────
-
-export function getSavingsTargets(): SavingsTarget[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(KEYS.savingsTargets);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
+  if (changedUpdates.length > 0) {
+    const ok = await supabaseUpdateTransactions(changedUpdates);
+    if (ok) {
+      const refreshed = await fetchTransactions();
+      if (refreshed !== null) setLocalTransactions(refreshed);
+    } else {
+      // Fallback: apply locally
+      const local = getLocalTransactions();
+      const updateMap = new Map(changedUpdates.map((u) => [u.id, u]));
+      const patched = local.map((t) => {
+        const u = updateMap.get(t.id);
+        return u ? { ...t, ...u } : t;
+      });
+      setLocalTransactions(patched);
+    }
   }
 }
 
-export function saveSavingsTargets(targets: SavingsTarget[]): void {
-  localStorage.setItem(KEYS.savingsTargets, JSON.stringify(targets));
-}
+// ═══════════════════════════════════════════════════════════════════════
+// SAVINGS TARGETS
+// ═══════════════════════════════════════════════════════════════════════
 
-// ─── Insights Cache ─────────────────────────────────────────────
-
-export function getCachedInsights(): Record<string, unknown> | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem(KEYS.insightsCache);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
+export async function getSavingsTargets(): Promise<SavingsTarget[]> {
+  const remote = await fetchSavingsTargets();
+  if (remote !== null) {
+    setLocalSavingsTargets(remote);
+    return remote;
   }
+  return getLocalSavingsTargets();
 }
 
-export function cacheInsights(data: Record<string, unknown>): void {
-  localStorage.setItem(KEYS.insightsCache, JSON.stringify({
-    ...data,
-    cachedAt: Date.now(),
-  }));
+export async function saveSavingsTargets(targets: SavingsTarget[]): Promise<void> {
+  const ok = await upsertSavingsTargets(targets);
+  if (ok) setLocalSavingsTargets(targets);
 }
 
-// ─── Custom Categories ──────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// INSIGHTS CACHE
+// ═══════════════════════════════════════════════════════════════════════
 
-export function getCustomCategories(): Record<string, string> {
-  if (typeof window === 'undefined') return {};
-  try {
-    const raw = localStorage.getItem(KEYS.customCategories);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
+export async function getCachedInsights(): Promise<Record<string, unknown> | null> {
+  const settings = await fetchUserSettings();
+  if (settings !== null) {
+    const cache = settings.insightsCache;
+    if (cache !== null) setLocalInsightsCache(cache);
+    return cache;
   }
+  return getLocalInsightsCache();
 }
 
-export function addCustomCategory(name: string, color: string): void {
-  const existing = getCustomCategories();
-  existing[name] = color;
-  localStorage.setItem(KEYS.customCategories, JSON.stringify(existing));
+export async function cacheInsights(data: Record<string, unknown>): Promise<void> {
+  const withTimestamp = { ...data, cachedAt: Date.now() };
+  const ok = await updateUserSettings({ insights_cache: withTimestamp });
+  if (ok) setLocalInsightsCache(data);
 }
 
-// ─── Account Nicknames ──────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// CUSTOM CATEGORIES (colors)
+// ═══════════════════════════════════════════════════════════════════════
 
-export function getAccountNicknames(): Record<string, string> {
-  if (typeof window === 'undefined') return {};
-  try {
-    const raw = localStorage.getItem(KEYS.accountNicknames);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
+export async function getCustomCategories(): Promise<Record<string, string>> {
+  const settings = await fetchUserSettings();
+  if (settings !== null) {
+    setLocalCustomColors(settings.customColors);
+    return settings.customColors;
   }
+  return getLocalCustomColors();
 }
 
-export function saveAccountNickname(rawName: string, nickname: string): void {
-  const existing = getAccountNicknames();
-  existing[rawName] = nickname;
-  localStorage.setItem(KEYS.accountNicknames, JSON.stringify(existing));
+export async function addCustomCategory(name: string, color: string): Promise<void> {
+  const existing = await getCustomCategories();
+  const updated = { ...existing, [name]: color };
+  const ok = await updateUserSettings({ custom_colors: updated });
+  if (ok) setLocalCustomColors(updated);
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// ACCOUNT NICKNAMES
+// ═══════════════════════════════════════════════════════════════════════
+
+export async function getAccountNicknames(): Promise<Record<string, string>> {
+  const settings = await fetchUserSettings();
+  if (settings !== null) {
+    setLocalAccountNicknames(settings.accountNicknames);
+    return settings.accountNicknames;
+  }
+  return getLocalAccountNicknames();
+}
+
+export async function saveAccountNickname(rawName: string, nickname: string): Promise<void> {
+  const existing = await getAccountNicknames();
+  const updated = { ...existing, [rawName]: nickname };
+  const ok = await updateUserSettings({ account_nicknames: updated });
+  if (ok) setLocalAccountNicknames(updated);
+}
+
+/** Synchronous — reads from localStorage cache only */
 export function getDisplayName(rawName: string): string {
-  const nicknames = getAccountNicknames();
+  const nicknames = getLocalAccountNicknames();
   return nicknames[rawName] || rawName;
 }
 
-// ─── Knowledge Bank ─────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// KNOWLEDGE BANK
+// ═══════════════════════════════════════════════════════════════════════
 
-import type { KnowledgeEntry } from '@/types';
-
-export function getKnowledgeEntries(): KnowledgeEntry[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(KEYS.knowledgeBank);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
+export async function getKnowledgeEntries(): Promise<KnowledgeEntry[]> {
+  const remote = await fetchKnowledgeEntries();
+  if (remote !== null) {
+    setLocalKnowledgeEntries(remote);
+    return remote;
   }
+  return getLocalKnowledgeEntries();
 }
 
-export function saveKnowledgeEntries(entries: KnowledgeEntry[]): void {
-  localStorage.setItem(KEYS.knowledgeBank, JSON.stringify(entries));
+export async function saveKnowledgeEntries(entries: KnowledgeEntry[]): Promise<void> {
+  const ok = await upsertKnowledgeEntries(entries);
+  if (ok) setLocalKnowledgeEntries(entries);
 }
 
-export function addKnowledgeEntry(entry: Omit<KnowledgeEntry, 'id' | 'createdAt'>): KnowledgeEntry {
-  const entries = getKnowledgeEntries();
+export async function addKnowledgeEntry(
+  entry: Omit<KnowledgeEntry, 'id' | 'createdAt'>
+): Promise<KnowledgeEntry> {
   const newEntry: KnowledgeEntry = {
     ...entry,
     id: `kb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     createdAt: new Date().toISOString(),
   };
-  entries.unshift(newEntry);
-  saveKnowledgeEntries(entries);
+
+  const ok = await insertKnowledgeEntry(newEntry);
+  if (ok) {
+    // Refresh cache
+    const all = await fetchKnowledgeEntries();
+    if (all !== null) setLocalKnowledgeEntries(all);
+  } else {
+    // Fallback: add to local cache
+    const local = getLocalKnowledgeEntries();
+    local.unshift(newEntry);
+    setLocalKnowledgeEntries(local);
+  }
+
   return newEntry;
 }
 
-export function deleteKnowledgeEntry(id: string): void {
-  const entries = getKnowledgeEntries().filter((e) => e.id !== id);
-  saveKnowledgeEntries(entries);
-}
-
-// ─── Account Types (hub/credit-card/savings hierarchy) ──────────
-
-export function getAccountTypes(): AccountConfig[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(KEYS.accountTypes);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
+export async function deleteKnowledgeEntry(id: string): Promise<void> {
+  const ok = await supabaseDeleteKnowledgeEntry(id);
+  if (ok) {
+    const all = await fetchKnowledgeEntries();
+    if (all !== null) setLocalKnowledgeEntries(all);
+  } else {
+    // Fallback: remove from local cache
+    const local = getLocalKnowledgeEntries().filter((e) => e.id !== id);
+    setLocalKnowledgeEntries(local);
   }
 }
 
-export function saveAccountTypes(configs: AccountConfig[]): void {
-  localStorage.setItem(KEYS.accountTypes, JSON.stringify(configs));
+// ═══════════════════════════════════════════════════════════════════════
+// ACCOUNT TYPES (hub/credit-card/savings hierarchy)
+// ═══════════════════════════════════════════════════════════════════════
+
+export async function getAccountTypes(): Promise<AccountConfig[]> {
+  const settings = await fetchUserSettings();
+  if (settings !== null) {
+    setLocalAccountTypes(settings.accountTypes);
+    return settings.accountTypes;
+  }
+  return getLocalAccountTypes();
 }
 
-export function setAccountType(rawName: string, type: AccountConfig['type']): void {
-  const configs = getAccountTypes();
+export async function saveAccountTypes(configs: AccountConfig[]): Promise<void> {
+  const ok = await updateUserSettings({ account_types: configs });
+  if (ok) setLocalAccountTypes(configs);
+}
+
+export async function setAccountType(rawName: string, type: AccountConfig['type']): Promise<void> {
+  const configs = await getAccountTypes();
   const idx = configs.findIndex((c) => c.rawName === rawName);
   if (idx >= 0) {
     configs[idx] = { rawName, type, autoDetected: false };
   } else {
     configs.push({ rawName, type, autoDetected: false });
   }
-  saveAccountTypes(configs);
+  await saveAccountTypes(configs);
 }
 
-// ─── Dismissed Recommendations ──────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// DISMISSED RECOMMENDATIONS
+// ═══════════════════════════════════════════════════════════════════════
 
-export function getDismissedRecommendations(): string[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(KEYS.dismissedRecommendations);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
+export async function getDismissedRecommendations(): Promise<string[]> {
+  const settings = await fetchUserSettings();
+  if (settings !== null) {
+    setLocalDismissedRecommendations(settings.dismissedRecommendations);
+    return settings.dismissedRecommendations;
   }
+  return getLocalDismissedRecommendations();
 }
 
-export function dismissRecommendation(id: string): void {
-  const existing = getDismissedRecommendations();
+export async function dismissRecommendation(id: string): Promise<void> {
+  const existing = await getDismissedRecommendations();
   if (!existing.includes(id)) {
-    existing.push(id);
-    localStorage.setItem(KEYS.dismissedRecommendations, JSON.stringify(existing));
+    const updated = [...existing, id];
+    const ok = await updateUserSettings({ dismissed_recommendations: updated });
+    if (ok) setLocalDismissedRecommendations(updated);
   }
 }
 
-// ─── Monthly AI Analyses ────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// MONTHLY AI ANALYSES
+// ═══════════════════════════════════════════════════════════════════════
 
-export interface StoredAnalysis {
-  cycleId: string;
-  analysedAt: string; // ISO date
-  analysis: Record<string, unknown>;
-}
-
-export function getMonthlyAnalyses(): StoredAnalysis[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(KEYS.monthlyAnalyses);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
+export async function getMonthlyAnalyses(): Promise<StoredAnalysis[]> {
+  const remote = await fetchMonthlyAnalyses();
+  if (remote !== null) {
+    setLocalMonthlyAnalyses(remote);
+    return remote;
   }
+  return getLocalMonthlyAnalyses();
 }
 
-export function saveMonthlyAnalysis(cycleId: string, analysis: Record<string, unknown>): void {
-  const existing = getMonthlyAnalyses();
-  // Replace existing for same cycle, or add new
-  const idx = existing.findIndex((a) => a.cycleId === cycleId);
-  const entry: StoredAnalysis = {
-    cycleId,
-    analysedAt: new Date().toISOString(),
-    analysis,
-  };
-  if (idx >= 0) {
-    existing[idx] = entry;
+export async function saveMonthlyAnalysis(
+  cycleId: string,
+  analysis: Record<string, unknown>
+): Promise<void> {
+  const ok = await upsertMonthlyAnalysis(cycleId, analysis);
+  if (ok) {
+    // Refresh full list cache
+    const all = await fetchMonthlyAnalyses();
+    if (all !== null) setLocalMonthlyAnalyses(all);
   } else {
-    existing.unshift(entry);
+    // Fallback: update local cache
+    const existing = getLocalMonthlyAnalyses();
+    const idx = existing.findIndex((a) => a.cycleId === cycleId);
+    const entry: StoredAnalysis = {
+      cycleId,
+      analysedAt: new Date().toISOString(),
+      analysis,
+    };
+    if (idx >= 0) {
+      existing[idx] = entry;
+    } else {
+      existing.unshift(entry);
+    }
+    setLocalMonthlyAnalyses(existing);
   }
-  localStorage.setItem(KEYS.monthlyAnalyses, JSON.stringify(existing));
 }
 
-export function getAnalysisForCycle(cycleId: string): StoredAnalysis | null {
-  return getMonthlyAnalyses().find((a) => a.cycleId === cycleId) ?? null;
+export async function getAnalysisForCycle(cycleId: string): Promise<StoredAnalysis | null> {
+  const remote = await fetchAnalysisForCycle(cycleId);
+  if (remote !== null) return remote;
+  // Fallback: check local cache
+  const local = getLocalMonthlyAnalyses();
+  return local.find((a) => a.cycleId === cycleId) ?? null;
 }
