@@ -1,6 +1,8 @@
-# src/lib — Storage, Categorization & Intelligence
+# src/lib — Storage, Categorization, Intelligence & Supabase
 
-## localStorage Keys (exact strings — do not rename without updating storage.ts)
+## Storage: localStorage (current) → Supabase (migration pending)
+
+### localStorage Keys (exact strings — do not rename without updating storage.ts)
 ```
 savings_transactions       — Transaction[]
 savings_custom_rules       — CategoryRule[]
@@ -14,6 +16,23 @@ savings_dismissed_recommendations — string[] (dismissed recommendation IDs)
 savings_monthly_analyses   — StoredAnalysis[] (AI monthly analysis results, persisted per cycle)
 ```
 All reads/writes go through `storage.ts` — never access localStorage directly in pages.
+
+### Supabase Tables (created, migration pending — see `scripts/supabase-migration.sql`)
+Each localStorage key maps to a Supabase table with RLS (user_id isolation):
+```
+transactions         ← savings_transactions
+category_rules       ← savings_custom_rules
+savings_targets      ← savings_targets
+knowledge_entries    ← savings_knowledge_bank
+monthly_analyses     ← savings_monthly_analyses
+user_settings        ← savings_custom_colors + savings_account_nicknames + savings_account_types + savings_dismissed_recommendations + savings_insights_cache
+```
+Migration guide: `docs/patterns/supabase-migration/MIGRATION-GUIDE.md`
+
+### Supabase Client Helpers (`src/lib/supabase/`)
+- `client.ts` — Browser-side Supabase client (use in `'use client'` components)
+- `server.ts` — Server-side Supabase client (use in API routes / Server Components)
+- `middleware.ts` — Session refresh middleware (called by root `middleware.ts`)
 
 ## Categorization Pipeline (priority order — never skip steps)
 1. **Custom/user rules** — corrections from localStorage, matched by description substring

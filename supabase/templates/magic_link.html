@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a0f; color: #e5e7eb; padding: 40px 20px;">
+  <div style="max-width: 400px; margin: 0 auto; background: #111118; border: 1px solid #1e1e2e; border-radius: 16px; padding: 32px;">
+    <div style="text-align: center; margin-bottom: 24px;">
+      <div style="display: inline-block; background: #6366f1; color: white; font-weight: bold; font-size: 18px; width: 40px; height: 40px; line-height: 40px; border-radius: 10px;">S</div>
+    </div>
+    <h2 style="text-align: center; margin: 0 0 8px; font-size: 20px; color: #e5e7eb;">Sign in to Savings Dashboard</h2>
+    <p style="text-align: center; color: #6b7280; font-size: 14px; margin: 0 0 24px;">Use either option below to sign in.</p>
+
+    <div style="text-align: center; margin-bottom: 24px;">
+      <p style="color: #6b7280; font-size: 12px; margin: 0 0 8px;">Your sign-in code:</p>
+      <div style="font-family: monospace; font-size: 32px; letter-spacing: 0.2em; color: #e5e7eb; background: #0a0a0f; border: 1px solid #1e1e2e; border-radius: 8px; padding: 12px;">{{ .Token }}</div>
+    </div>
+
+    <div style="text-align: center; color: #6b7280; font-size: 12px; margin-bottom: 16px;">— or —</div>
+
+    <div style="text-align: center;">
+      <a href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=magiclink"
+         style="display: inline-block; background: #6366f1; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: 500; font-size: 14px;">
+        Click to sign in
+      </a>
+    </div>
+
+    <p style="text-align: center; color: #1e1e2e; font-size: 11px; margin-top: 24px;">If you didn't request this, ignore this email.</p>
+  </div>
+</body>
+</html>
