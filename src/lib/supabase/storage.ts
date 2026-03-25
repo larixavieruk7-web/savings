@@ -138,15 +138,28 @@ export async function fetchTransactions(): Promise<Transaction[] | null> {
     const supabase = getClient()
     const userId = await getUserId()
     if (!userId) return null
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('*')
-      .order('date', { ascending: false })
-    if (error) {
-      console.error('[storage] fetchTransactions error:', error.message, error.code, error.details)
-      return null
+
+    // Supabase default limit is 1000 rows — fetch all in pages
+    const PAGE_SIZE = 1000
+    const allRows: TxRow[] = []
+    let from = 0
+
+    while (true) {
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .order('date', { ascending: false })
+        .range(from, from + PAGE_SIZE - 1)
+      if (error) {
+        console.error('[storage] fetchTransactions error:', error.message, error.code, error.details)
+        return null
+      }
+      allRows.push(...(data ?? []))
+      if (!data || data.length < PAGE_SIZE) break
+      from += PAGE_SIZE
     }
-    return (data ?? []).map(rowToTransaction)
+
+    return allRows.map(rowToTransaction)
   } catch (err) {
     console.error('[storage] fetchTransactions error:', err)
     return null
