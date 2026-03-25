@@ -76,7 +76,7 @@ export default function DashboardHome() {
       <div className="space-y-6">
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
+            <h1 className="text-2xl md:text-3xl font-bold text-foreground">Dashboard</h1>
           </div>
           <PeriodSelector />
         </div>
@@ -128,22 +128,22 @@ export default function DashboardHome() {
     <div className="space-y-6">
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-foreground">Dashboard</h1>
           <Link
             href="/upload"
-            className="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            className="hidden md:inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
           >
             <Upload className="h-4 w-4" />
             Upload More
           </Link>
         </div>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
             {dateRange && (
-              <p className="text-muted">
+              <p className="text-xs md:text-sm text-muted">
                 {format(parseISO(dateRange.from), 'dd MMM yyyy')} —{' '}
                 {format(parseISO(dateRange.to), 'dd MMM yyyy')} ·{' '}
-                {transactions.length.toLocaleString()} transactions
+                {transactions.length.toLocaleString()} txns
               </p>
             )}
           </div>
@@ -162,7 +162,7 @@ export default function DashboardHome() {
       />
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <KpiCard
           label="Total Income"
           value={formatGBP(totalIncome)}
@@ -216,46 +216,49 @@ export default function DashboardHome() {
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Income vs Spending Bar Chart */}
-        <div className="bg-card border border-card-border rounded-xl p-6">
-          <h3 className="text-lg font-semibold text-foreground mb-4">
+        <div className="bg-card border border-card-border rounded-xl p-4 md:p-6">
+          <h3 className="text-base md:text-lg font-semibold text-foreground mb-3 md:mb-4">
             Income vs Spending
           </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={barData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
-              <XAxis dataKey="month" tick={{ fill: '#6b7280', fontSize: 12 }} />
-              <YAxis tick={{ fill: '#6b7280', fontSize: 12 }} tickFormatter={(v) => `£${v.toLocaleString()}`} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#111118',
-                  border: '1px solid #1e1e2e',
-                  borderRadius: '8px',
-                  color: '#e5e7eb',
-                }}
-                formatter={gbpTooltipFormatter}
-              />
-              <Bar dataKey="income" name="Income" fill="#22c55e" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="spending" name="Spending" fill="#ef4444" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="h-[220px] md:h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={barData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
+                <XAxis dataKey="month" tick={{ fill: '#6b7280', fontSize: 11 }} />
+                <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} tickFormatter={(v) => `£${v.toLocaleString()}`} width={55} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#111118',
+                    border: '1px solid #1e1e2e',
+                    borderRadius: '8px',
+                    color: '#e5e7eb',
+                  }}
+                  formatter={gbpTooltipFormatter}
+                />
+                <Bar dataKey="income" name="Income" fill="#22c55e" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="spending" name="Spending" fill="#ef4444" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
 
         {/* Category Donut */}
-        <div className="bg-card border border-card-border rounded-xl p-6">
-          <h3 className="text-lg font-semibold text-foreground mb-4">
+        <div className="bg-card border border-card-border rounded-xl p-4 md:p-6">
+          <h3 className="text-base md:text-lg font-semibold text-foreground mb-3 md:mb-4">
             Spending by Category
           </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={donutData}
-                cx="50%"
-                cy="50%"
-                innerRadius={70}
-                outerRadius={110}
-                paddingAngle={2}
-                dataKey="value"
-              >
+          <div className="h-[220px] md:h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={donutData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius="45%"
+                  outerRadius="75%"
+                  paddingAngle={2}
+                  dataKey="value"
+                >
                 {donutData.map((entry, i) => (
                   <Cell key={i} fill={entry.color} />
                 ))}
@@ -269,9 +272,10 @@ export default function DashboardHome() {
                 }}
                 formatter={gbpTooltipFormatter}
               />
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="grid grid-cols-2 gap-2 mt-2">
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5 md:gap-2 mt-2">
             {donutData.map((d) => (
               <div key={d.name} className="flex items-center gap-2 text-xs">
                 <div
@@ -289,7 +293,7 @@ export default function DashboardHome() {
       </div>
 
       {/* Top Spending Categories (with creep badges) */}
-      <div className="bg-card border border-card-border rounded-xl p-6">
+      <div className="bg-card border border-card-border rounded-xl p-4 md:p-6">
         <h3 className="text-lg font-semibold text-foreground mb-4">
           Top Spending Categories
         </h3>
@@ -395,14 +399,14 @@ function KpiCard({
 }) {
   return (
     <div
-      className={`bg-card border border-card-border rounded-xl p-5 ${onClick ? 'cursor-pointer hover:border-accent/50 transition-colors' : ''}`}
+      className={`bg-card border border-card-border rounded-xl p-3.5 md:p-5 ${onClick ? 'cursor-pointer hover:border-accent/50 transition-colors' : ''}`}
       onClick={onClick}
     >
       <div className="flex items-center justify-between mb-1">
-        <p className="text-sm text-muted">{label}</p>
+        <p className="text-xs md:text-sm text-muted">{label}</p>
         {onClick && <ChevronDown className="h-3.5 w-3.5 text-muted" />}
       </div>
-      <p className={`text-2xl font-bold ${positive ? 'text-success' : 'text-danger'}`}>
+      <p className={`text-lg md:text-2xl font-bold ${positive ? 'text-success' : 'text-danger'}`}>
         {value}
       </p>
       {change && (
@@ -412,7 +416,7 @@ function KpiCard({
           ) : (
             <ArrowDownRight className="h-3 w-3 text-muted" />
           )}
-          <span className="text-xs text-muted">{change} vs prev month</span>
+          <span className="text-[10px] md:text-xs text-muted">{change} vs prev</span>
         </div>
       )}
     </div>
@@ -432,7 +436,7 @@ function EssentialVsDiscretionary({
   const discretionaryPct = totalSpending > 0 ? (discretionarySpending / totalSpending) * 100 : 0;
 
   return (
-    <div className="bg-card border border-card-border rounded-xl p-6">
+    <div className="bg-card border border-card-border rounded-xl p-4 md:p-6">
       <div className="flex items-center gap-2 mb-4">
         <ShieldCheck className="h-5 w-5 text-accent" />
         <h3 className="text-lg font-semibold text-foreground">
@@ -534,7 +538,7 @@ function SavingsTargetProgress({
   const onTrack = actualNet >= targetAmount;
 
   return (
-    <div className="bg-card border border-card-border rounded-xl p-6">
+    <div className="bg-card border border-card-border rounded-xl p-4 md:p-6">
       <div className="flex items-center gap-2 mb-4">
         <Target className="h-5 w-5 text-accent" />
         <h3 className="text-lg font-semibold text-foreground">
@@ -678,7 +682,7 @@ function BudgetRuleIndicator({
   ];
 
   return (
-    <div className="bg-card border border-card-border rounded-xl p-6">
+    <div className="bg-card border border-card-border rounded-xl p-4 md:p-6">
       <div className="flex items-center gap-2 mb-2">
         <PiggyBank className="h-5 w-5 text-accent" />
         <h3 className="text-lg font-semibold text-foreground">50 / 30 / 20 Budget Rule</h3>
@@ -754,7 +758,7 @@ function HouseholdSalary({ transactions }: { transactions: Transaction[] }) {
     .sort(([a], [b]) => b.localeCompare(a));
 
   return (
-    <div className="bg-card border border-card-border rounded-xl p-6">
+    <div className="bg-card border border-card-border rounded-xl p-4 md:p-6">
       <div className="flex items-center gap-2 mb-4">
         <Banknote className="h-5 w-5 text-success" />
         <h3 className="text-lg font-semibold text-foreground">
@@ -866,7 +870,7 @@ function MortgageAndLoans({ transactions }: { transactions: Transaction[] }) {
   const totalMonthly = allProducts.reduce((s, p) => s + p.latestPayment, 0);
 
   return (
-    <div className="bg-card border border-card-border rounded-xl p-6">
+    <div className="bg-card border border-card-border rounded-xl p-4 md:p-6">
       <div className="flex items-center gap-2 mb-4">
         <Landmark className="h-5 w-5 text-danger" />
         <h3 className="text-lg font-semibold text-foreground">
@@ -971,7 +975,7 @@ function CardSpendingBreakdown({ transactions }: { transactions: Transaction[] }
   if (cards.length === 0) return null;
 
   return (
-    <div className="bg-card border border-card-border rounded-xl p-6">
+    <div className="bg-card border border-card-border rounded-xl p-4 md:p-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div>
@@ -1195,8 +1199,8 @@ function EmptyState() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
-        <p className="text-muted mt-1">Household spending overview</p>
+        <h1 className="text-2xl md:text-3xl font-bold text-foreground">Dashboard</h1>
+        <p className="text-xs md:text-sm text-muted mt-0.5 md:mt-1">Household spending overview</p>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Link

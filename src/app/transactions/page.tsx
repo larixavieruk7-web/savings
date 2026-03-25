@@ -234,7 +234,7 @@ export default function TransactionsPage() {
   if (transactions.length === 0) {
     return (
       <div className="space-y-8">
-        <h1 className="text-3xl font-bold text-foreground">Transactions</h1>
+        <h1 className="text-2xl md:text-3xl font-bold text-foreground">Transactions</h1>
         <div className="border border-dashed border-card-border rounded-xl p-16 text-center">
           <p className="text-muted mb-4">No transactions yet.</p>
           <Link
@@ -250,11 +250,11 @@ export default function TransactionsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Transactions</h1>
-          <p className="text-muted mt-1">
-            {filtered.length.toLocaleString()} transaction{filtered.length !== 1 ? 's' : ''}
+          <h1 className="text-2xl md:text-3xl font-bold text-foreground">Transactions</h1>
+          <p className="text-xs md:text-sm text-muted mt-0.5 md:mt-1">
+            {filtered.length.toLocaleString()} txn{filtered.length !== 1 ? 's' : ''}
             {search || categoryFilter ? ' (filtered)' : ''}
           </p>
         </div>
@@ -343,8 +343,34 @@ export default function TransactionsPage() {
         </div>
       </div>
 
-      {/* Table */}
-      <div className="bg-card border border-card-border rounded-xl overflow-hidden">
+      {/* Mobile card view */}
+      <div className="md:hidden space-y-2">
+        {paged.map((t, i) => (
+          <div
+            key={`m-${t.id}-${i}`}
+            className={`bg-card border border-card-border rounded-xl p-3.5 ${
+              selectedIds.has(t.id) ? 'border-accent/40 bg-accent/5' : ''
+            }`}
+            onClick={() => toggleSelectOne(t.id)}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground truncate">{t.description}</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[11px] text-muted">{format(parseISO(t.date), 'dd MMM')}</span>
+                  <span className="text-[11px] px-1.5 py-0.5 rounded bg-card-border/60 text-muted">{t.category}</span>
+                </div>
+              </div>
+              <span className={`text-sm font-bold font-mono whitespace-nowrap ${t.amount >= 0 ? 'text-success' : 'text-danger'}`}>
+                {t.amount >= 0 ? '+' : '-'}{formatGBP(Math.abs(t.amount))}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop table view */}
+      <div className="hidden md:block bg-card border border-card-border rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -421,37 +447,37 @@ export default function TransactionsPage() {
             </tbody>
           </table>
         </div>
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between p-4 border-t border-card-border">
-            <p className="text-sm text-muted">
-              Page {page + 1} of {totalPages}
-            </p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-                disabled={page === 0}
-                className="px-3 py-1.5 text-sm bg-card-border rounded-lg disabled:opacity-30 hover:bg-muted/30 transition-colors"
-              >
-                Previous
-              </button>
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-                disabled={page >= totalPages - 1}
-                className="px-3 py-1.5 text-sm bg-card-border rounded-lg disabled:opacity-30 hover:bg-muted/30 transition-colors"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        )}
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between p-3 md:p-4 bg-card border border-card-border rounded-xl md:rounded-none md:border-t md:border-x-0 md:border-b-0">
+          <p className="text-xs md:text-sm text-muted">
+            {page + 1} / {totalPages}
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="px-3 py-1.5 text-sm bg-card-border rounded-lg disabled:opacity-30 hover:bg-muted/30 transition-colors"
+            >
+              Prev
+            </button>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+              disabled={page >= totalPages - 1}
+              className="px-3 py-1.5 text-sm bg-card-border rounded-lg disabled:opacity-30 hover:bg-muted/30 transition-colors"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Bulk Action Bar */}
       {selectedIds.size > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 z-50">
-          <div className="max-w-5xl mx-auto px-4 pb-4">
+        <div className="fixed bottom-16 md:bottom-0 left-0 right-0 z-50">
+          <div className="max-w-5xl mx-auto px-3 md:px-4 pb-3 md:pb-4">
             <div className="bg-card/90 backdrop-blur border border-card-border rounded-t-xl shadow-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
               <div className="flex items-center gap-2 text-sm font-medium text-foreground shrink-0">
                 <CheckSquare className="h-4 w-4 text-accent" />

@@ -96,7 +96,7 @@ export default function TrendsPage() {
   if (transactions.length === 0) {
     return (
       <div className="space-y-8">
-        <h1 className="text-3xl font-bold text-foreground">Trends</h1>
+        <h1 className="text-2xl md:text-3xl font-bold text-foreground">Trends</h1>
         <div className="border border-dashed border-card-border rounded-xl p-16 text-center">
           <p className="text-muted mb-4">Upload a bank statement to see spending trends.</p>
           <Link
@@ -112,10 +112,10 @@ export default function TrendsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Spending Trends</h1>
-          <p className="text-muted mt-1">
+          <h1 className="text-2xl md:text-3xl font-bold text-foreground">Spending Trends</h1>
+          <p className="text-xs md:text-sm text-muted mt-0.5 md:mt-1">
             Track how your spending changes over time
           </p>
         </div>
@@ -123,68 +123,72 @@ export default function TrendsPage() {
       </div>
 
       {/* Cash Flow Area Chart */}
-      <div className="bg-card border border-card-border rounded-xl p-6">
-        <h3 className="text-lg font-semibold text-foreground mb-4">
+      <div className="bg-card border border-card-border rounded-xl p-4 md:p-6">
+        <h3 className="text-base md:text-lg font-semibold text-foreground mb-3 md:mb-4">
           Cash Flow Over Time
         </h3>
-        <ResponsiveContainer width="100%" height={350}>
-          <AreaChart data={cashFlowData}>
-            <defs>
-              <linearGradient id="incomeGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
-              </linearGradient>
-              <linearGradient id="spendingGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
-            <XAxis dataKey="month" tick={{ fill: '#6b7280', fontSize: 12 }} />
-            <YAxis tick={{ fill: '#6b7280', fontSize: 12 }} tickFormatter={(v) => `£${v.toLocaleString()}`} />
-            <Tooltip
-              contentStyle={{ backgroundColor: '#111118', border: '1px solid #1e1e2e', borderRadius: '8px', color: '#e5e7eb' }}
-              formatter={gbpTooltipFormatter}
-            />
-            <Legend />
-            <Area type="monotone" dataKey="income" name="Income" stroke="#22c55e" fill="url(#incomeGrad)" strokeWidth={2} />
-            <Area type="monotone" dataKey="spending" name="Spending" stroke="#ef4444" fill="url(#spendingGrad)" strokeWidth={2} />
-          </AreaChart>
-        </ResponsiveContainer>
+        <div className="h-[220px] md:h-[350px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={cashFlowData}>
+              <defs>
+                <linearGradient id="incomeGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="spendingGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
+              <XAxis dataKey="month" tick={{ fill: '#6b7280', fontSize: 11 }} />
+              <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} tickFormatter={(v) => `£${v.toLocaleString()}`} width={55} />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#111118', border: '1px solid #1e1e2e', borderRadius: '8px', color: '#e5e7eb' }}
+                formatter={gbpTooltipFormatter}
+              />
+              <Legend wrapperStyle={{ fontSize: '11px' }} />
+              <Area type="monotone" dataKey="income" name="Income" stroke="#22c55e" fill="url(#incomeGrad)" strokeWidth={2} />
+              <Area type="monotone" dataKey="spending" name="Spending" stroke="#ef4444" fill="url(#spendingGrad)" strokeWidth={2} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
       {/* Net Savings Bar Chart */}
-      <div className="bg-card border border-card-border rounded-xl p-6">
-        <h3 className="text-lg font-semibold text-foreground mb-4">
+      <div className="bg-card border border-card-border rounded-xl p-4 md:p-6">
+        <h3 className="text-base md:text-lg font-semibold text-foreground mb-3 md:mb-4">
           Monthly Net Savings
         </h3>
-        <ResponsiveContainer width="100%" height={250}>
-          <BarChart data={cashFlowData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
-            <XAxis dataKey="month" tick={{ fill: '#6b7280', fontSize: 12 }} />
-            <YAxis tick={{ fill: '#6b7280', fontSize: 12 }} tickFormatter={(v) => `£${v.toLocaleString()}`} />
-            <Tooltip
-              contentStyle={{ backgroundColor: '#111118', border: '1px solid #1e1e2e', borderRadius: '8px', color: '#e5e7eb' }}
-              formatter={gbpTooltipFormatter}
-            />
-            <Bar
-              dataKey="net"
-              name="Net"
-              radius={[4, 4, 0, 0]}
-              fill="#6366f1"
-            />
-          </BarChart>
-        </ResponsiveContainer>
+        <div className="h-[180px] md:h-[250px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={cashFlowData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
+              <XAxis dataKey="month" tick={{ fill: '#6b7280', fontSize: 11 }} />
+              <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} tickFormatter={(v) => `£${v.toLocaleString()}`} width={55} />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#111118', border: '1px solid #1e1e2e', borderRadius: '8px', color: '#e5e7eb' }}
+                formatter={gbpTooltipFormatter}
+              />
+              <Bar
+                dataKey="net"
+                name="Net"
+                radius={[4, 4, 0, 0]}
+                fill="#6366f1"
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
       {/* Category Trends Line Chart */}
-      <div className="bg-card border border-card-border rounded-xl p-6">
-        <h3 className="text-lg font-semibold text-foreground mb-4">
+      <div className="bg-card border border-card-border rounded-xl p-4 md:p-6">
+        <h3 className="text-base md:text-lg font-semibold text-foreground mb-3 md:mb-4">
           Category Trends
         </h3>
 
-        {/* Category filter chips */}
-        <div className="flex flex-wrap gap-2 mb-4">
+        {/* Category filter chips — horizontal scroll on mobile */}
+        <div className="flex gap-2 mb-4 overflow-x-auto no-scrollbar pb-1">
           {allCategories.map((cat) => {
             const isActive = activeCats.includes(cat);
             const color = CATEGORY_COLORS[cat as CategoryName] || '#a1a1aa';
@@ -192,7 +196,7 @@ export default function TrendsPage() {
               <button
                 key={cat}
                 onClick={() => toggleCategory(cat)}
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all border"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border whitespace-nowrap shrink-0"
                 style={{
                   backgroundColor: isActive ? `${color}20` : 'transparent',
                   borderColor: isActive ? color : '#1e1e2e',
@@ -209,38 +213,40 @@ export default function TrendsPage() {
           })}
         </div>
 
-        <ResponsiveContainer width="100%" height={350}>
-          <LineChart data={categoryTrendData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
-            <XAxis dataKey="month" tick={{ fill: '#6b7280', fontSize: 12 }} />
-            <YAxis tick={{ fill: '#6b7280', fontSize: 12 }} tickFormatter={(v) => `£${v.toLocaleString()}`} />
-            <Tooltip
-              contentStyle={{ backgroundColor: '#111118', border: '1px solid #1e1e2e', borderRadius: '8px', color: '#e5e7eb' }}
-              formatter={gbpTooltipFormatter}
-            />
-            <Legend />
-            {activeCats.map((cat) => (
-              <Line
-                key={cat}
-                type="monotone"
-                dataKey={cat}
-                stroke={CATEGORY_COLORS[cat as CategoryName] || '#a1a1aa'}
-                strokeWidth={2}
-                dot={{ r: 4 }}
-                activeDot={{ r: 6 }}
+        <div className="h-[220px] md:h-[350px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={categoryTrendData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
+              <XAxis dataKey="month" tick={{ fill: '#6b7280', fontSize: 11 }} />
+              <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} tickFormatter={(v) => `£${v.toLocaleString()}`} width={55} />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#111118', border: '1px solid #1e1e2e', borderRadius: '8px', color: '#e5e7eb' }}
+                formatter={gbpTooltipFormatter}
               />
-            ))}
-          </LineChart>
-        </ResponsiveContainer>
+              <Legend wrapperStyle={{ fontSize: '11px' }} />
+              {activeCats.map((cat) => (
+                <Line
+                  key={cat}
+                  type="monotone"
+                  dataKey={cat}
+                  stroke={CATEGORY_COLORS[cat as CategoryName] || '#a1a1aa'}
+                  strokeWidth={2}
+                  dot={{ r: 3 }}
+                  activeDot={{ r: 5 }}
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
       {/* Month-over-Month Changes */}
       {changes.length > 0 && (
-        <div className="bg-card border border-card-border rounded-xl p-6">
-          <h3 className="text-lg font-semibold text-foreground mb-4">
+        <div className="bg-card border border-card-border rounded-xl p-4 md:p-6">
+          <h3 className="text-base md:text-lg font-semibold text-foreground mb-3 md:mb-4">
             Month-over-Month Changes
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-3">
             {changes.map(({ category, current, previous, change }) => {
               const color = CATEGORY_COLORS[category as CategoryName] || '#a1a1aa';
               const isUp = change > 0;

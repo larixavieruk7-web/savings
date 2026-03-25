@@ -49,3 +49,40 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--muted);
 }
+
+/* Hide scrollbar but keep scroll functionality */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Mobile bottom sheet slide-up */
+@keyframes slide-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+.animate-slide-up {
+  animation: slide-up 0.28s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+/* Safe area for mobile viewports (notch, home indicator) */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  html {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* Mobile touch targets — ensure minimum 44px */
+@media (max-width: 767px) {
+  button, a, select, input[type="checkbox"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  /* Exclude inline text links and icon-only buttons from width constraint */
+  a:not([class*="flex"]):not([class*="inline-flex"]) {
+    min-width: auto;
+  }
+  /* Period selector buttons are intentionally compact */
+  [data-period-btn] {
+    min-height: 36px;
+    min-width: 36px;
+  }
+}

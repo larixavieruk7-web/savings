@@ -6,6 +6,8 @@ import { Sidebar } from '@/components/dashboard/sidebar'
 import { TransactionProvider } from '@/context/transactions'
 import { runMigrationIfNeeded, type MigrationProgress } from '@/lib/supabase/migration'
 import { cleanupBackups } from '@/lib/storage-local'
+import { BottomTabBar } from '@/components/mobile/bottom-tab-bar'
+import { MobileHeader } from '@/components/mobile/mobile-header'
 
 export function LayoutShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -54,11 +56,22 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         </div>
       )}
       <div className="flex h-screen overflow-hidden">
-        <Sidebar />
-        <main className="flex-1 overflow-y-auto p-6">
-          {children}
-        </main>
+        {/* Desktop sidebar — hidden on mobile */}
+        <div className="hidden md:flex">
+          <Sidebar />
+        </div>
+
+        {/* Main content area */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <MobileHeader />
+          <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-24 md:pb-6">
+            {children}
+          </main>
+        </div>
       </div>
+
+      {/* Mobile bottom tab bar */}
+      <BottomTabBar />
     </TransactionProvider>
   )
 }

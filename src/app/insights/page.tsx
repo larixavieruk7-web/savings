@@ -167,7 +167,7 @@ export default function InsightsPage() {
   if (transactions.length === 0) {
     return (
       <div className="space-y-8">
-        <h1 className="text-3xl font-bold text-foreground">AI Insights</h1>
+        <h1 className="text-2xl md:text-3xl font-bold text-foreground">AI Insights</h1>
         <div className="border border-dashed border-card-border rounded-xl p-16 text-center">
           <p className="text-muted mb-4">
             Upload a bank statement first to generate AI insights.
@@ -189,24 +189,24 @@ export default function InsightsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">AI Insights</h1>
-          <p className="text-muted mt-1">
-            Anomalies, savings opportunities, and actionable advice
+          <h1 className="text-2xl md:text-3xl font-bold text-foreground">AI Insights</h1>
+          <p className="text-xs md:text-sm text-muted mt-0.5 md:mt-1">
+            Anomalies, savings opportunities &amp; advice
           </p>
         </div>
         <button
           onClick={generateInsights}
           disabled={isLoading}
-          className="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover disabled:opacity-50 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
+          className="inline-flex items-center justify-center gap-2 bg-accent hover:bg-accent-hover disabled:opacity-50 text-white px-4 md:px-5 py-2.5 rounded-lg text-sm font-medium transition-colors w-full sm:w-auto"
         >
           {isLoading ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
             <Brain className="h-4 w-4" />
           )}
-          {isLoading ? 'Analyzing...' : suggestions.length > 0 ? 'Refresh Insights' : 'Generate Insights'}
+          {isLoading ? 'Analyzing...' : suggestions.length > 0 ? 'Refresh' : 'Generate Insights'}
         </button>
       </div>
 
@@ -287,10 +287,10 @@ export default function InsightsPage() {
 
       {/* Summary Stats */}
       {summary && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-card border border-card-border rounded-xl p-4">
-            <p className="text-xs text-muted">Essential Spending</p>
-            <p className="text-xl font-bold text-foreground">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4">
+          <div className="bg-card border border-card-border rounded-xl p-3 md:p-4">
+            <p className="text-[10px] md:text-xs text-muted">Essential</p>
+            <p className="text-lg md:text-xl font-bold text-foreground">
               £{summary.essentialSpend.toFixed(0)}
             </p>
             <p className="text-xs text-muted">{summary.essentialPercent}% of total</p>

@@ -205,14 +205,14 @@ export default function KnowledgePage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-foreground">Knowledge Bank</h1>
-        <p className="text-muted mt-1">
-          Journal life events and context that explain your spending patterns
+        <h1 className="text-2xl md:text-3xl font-bold text-foreground">Knowledge Bank</h1>
+        <p className="text-xs md:text-sm text-muted mt-0.5 md:mt-1">
+          Journal life events &amp; spending context
         </p>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-2 md:gap-4">
         <div className="bg-card border border-card-border rounded-xl p-4">
           <p className="text-xs text-muted">Total Entries</p>
           <p className="text-xl font-bold text-foreground">{stats.total}</p>

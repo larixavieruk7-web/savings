@@ -201,11 +201,11 @@ export default function UploadPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-foreground">
+        <h1 className="text-2xl md:text-3xl font-bold text-foreground">
           Upload Statements
         </h1>
-        <p className="text-muted mt-1">
-          Import bank statement CSVs — duplicates are automatically skipped
+        <p className="text-xs md:text-sm text-muted mt-0.5 md:mt-1">
+          Import CSVs — duplicates auto-skipped
         </p>
       </div>
 
@@ -314,7 +314,7 @@ export default function UploadPage() {
       {/* Stored Data Summary */}
       {existingTransactions.length > 0 && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4">
             <div className="bg-card border border-card-border rounded-xl p-5">
               <p className="text-sm text-muted mb-1">Total Transactions</p>
               <p className="text-2xl font-bold text-foreground">
