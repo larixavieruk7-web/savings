@@ -24,9 +24,9 @@ const NAV_ITEMS = [
   { href: '/transactions', label: 'Transactions', icon: Receipt },
   { href: '/categories', label: 'Categories', icon: Tags },
   { href: '/trends', label: 'Trends', icon: TrendingUp },
-  { href: '/insights', label: 'AI Insights', icon: Brain },
+  { href: '/ask', label: 'Advisor', icon: Brain },
   { href: '/knowledge', label: 'Knowledge', icon: BookOpen },
-  { href: '/ask', label: 'Ask AI', icon: MessageCircle },
+  { href: '/insights', label: 'AI Insights', icon: MessageCircle },
 ];
 
 export function Sidebar() {

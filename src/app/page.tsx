@@ -72,7 +72,7 @@ export default function DashboardHome() {
   const cycleId = period !== 'all' && period.startsWith('cycle-') ? period : (availableCycles[0]?.id ?? 'cycle-2026-01');
 
   const { targets, saveTargets } = useSpendingTargets(cycleId);
-  const { latestBriefing, dismissBriefing } = useAdvisorBriefings(cycleId);
+  const { latestBriefing, dismissBriefing, generateBriefing, shouldShowWeeklyCheckin } = useAdvisorBriefings(cycleId);
   const { commitments, activeCommitments, completeCommitment, deferCommitment } = useCommitments(cycleId);
 
   // ─── Compute spendingByCategory for TargetTracker ─────────────────
@@ -152,6 +152,42 @@ export default function DashboardHome() {
     const end = new Date(currentCycle.end);
     return Math.max(0, Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
   }, [currentCycle]);
+
+  // ─── Auto-trigger weekly check-in if >5 days since last ────────
+  const [weeklyTriggered, setWeeklyTriggered] = useState(false);
+  useEffect(() => {
+    if (!loaded || weeklyTriggered || transactions.length === 0) return;
+    if (!shouldShowWeeklyCheckin()) return;
+    setWeeklyTriggered(true);
+
+    // Build a lightweight context for the weekly briefing
+    const byCategory: Record<string, { spent: number; target: number; txnCount: number }> = {};
+    for (const t of transactions) {
+      if (t.amount < 0 && !INTERNAL_CATEGORIES.has(t.category)) {
+        if (!byCategory[t.category]) byCategory[t.category] = { spent: 0, target: 0, txnCount: 0 };
+        byCategory[t.category].spent += Math.abs(t.amount);
+        byCategory[t.category].txnCount++;
+      }
+    }
+    for (const t of targets) {
+      if (byCategory[t.category]) byCategory[t.category].target = t.targetAmount;
+    }
+    const topMerchants = Object.entries(
+      transactions.filter(t => t.amount < 0).reduce((acc, t) => {
+        const m = t.merchantName || t.description;
+        acc[m] = acc[m] || { merchant: m, amount: 0, count: 0 };
+        acc[m].amount += Math.abs(t.amount);
+        acc[m].count++;
+        return acc;
+      }, {} as Record<string, { merchant: string; amount: number; count: number }>)
+    ).map(([, v]) => v).sort((a, b) => b.amount - a.amount).slice(0, 10);
+
+    generateBriefing('weekly', {
+      currentCycleData: { totalIncome, totalSpending, byCategory, topMerchants },
+      targets: targets.map(t => ({ category: t.category, targetAmount: t.targetAmount, spent: spendingByCategory[t.category] || 0 })),
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, weeklyTriggered, transactions.length]);
 
   if (!loaded) {
     return (

@@ -29,6 +29,7 @@ export function useAdvisorBriefings(cycleId: string) {
   }, [cycleId]);
 
   // Generate a new briefing by calling the API
+  // `context` should match BriefingRequest shape (minus type/cycleId)
   const generateBriefing = useCallback(
     async (
       type: AdvisorBriefing['type'],
@@ -38,7 +39,7 @@ export function useAdvisorBriefings(cycleId: string) {
         const res = await fetch('/api/advisor/briefing', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type, cycleId, context }),
+          body: JSON.stringify({ type, cycleId, ...context }),
         });
         if (!res.ok) throw new Error(`API error: ${res.status}`);
         const data = await res.json();

@@ -2,7 +2,7 @@ import type { Transaction, AccountConfig, AccountType } from '@/types';
 
 // ─── Patterns for auto-detection ────────────────────────────────
 
-const SALARY_PATTERNS = ['3305 JPMCB', 'XAVIER DA SILVA G'];
+const SALARY_PATTERNS = ['3305 JPMCB'];
 
 const CREDIT_CARD_PATTERNS = ['AMEX', 'AMERICAN EXP'];
 

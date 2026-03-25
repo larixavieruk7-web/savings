@@ -17,7 +17,7 @@ const TABS = [
   { href: '/', label: 'Home', icon: LayoutDashboard },
   { href: '/transactions', label: 'Txns', icon: Receipt },
   { href: '/trends', label: 'Trends', icon: TrendingUp },
-  { href: '/insights', label: 'Insights', icon: Brain },
+  { href: '/ask', label: 'Advisor', icon: Brain },
 ] as const;
 
 export function BottomTabBar() {
@@ -25,7 +25,7 @@ export function BottomTabBar() {
   const [sheetOpen, setSheetOpen] = useState(false);
 
   // "More" pages — highlight More tab when on these routes
-  const moreRoutes = ['/upload', '/accounts', '/categories', '/knowledge', '/ask'];
+  const moreRoutes = ['/upload', '/accounts', '/categories', '/knowledge', '/insights'];
   const isMoreActive = moreRoutes.some((r) => pathname.startsWith(r));
 
   return (

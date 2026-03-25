@@ -127,8 +127,8 @@ export const DEFAULT_RULES: CategoryRule[] = [
   // Bank charges / fees
   { pattern: 'NON-STERLING TRANSACTION', category: 'Bank Charges', source: 'system' },
 
-  // Salary (Gus's BAC payments)
-  { pattern: 'XAVIER DA SILVA G', category: 'Salary', source: 'system' },
+  // Gus → Larissa transfer (covers NatWest loan — NOT salary)
+  { pattern: 'XAVIER DA SILVA G', category: 'Transfers', source: 'system' },
 
   // Rewards
   { pattern: 'MYREWARDS', category: 'Income', source: 'system' },
