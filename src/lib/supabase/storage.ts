@@ -55,6 +55,22 @@ export async function getUserId(): Promise<string | null> {
   }
 }
 
+export async function getUserEmail(): Promise<string | null> {
+  try {
+    const supabase = getClient()
+    const { data, error } = await supabase.auth.getUser()
+    if (error || !data.user) return null
+    return data.user.email ?? null
+  } catch (err) {
+    return null
+  }
+}
+
+export async function signOut(): Promise<void> {
+  const supabase = getClient()
+  await supabase.auth.signOut()
+}
+
 // ─── Row ↔ App type mappers ───────────────────────────────────────
 
 type TxRow = Database['public']['Tables']['transactions']['Row']
@@ -299,12 +315,14 @@ function rowToCategoryRule(row: RuleRow): CategoryRule {
 export async function fetchCategoryRules(): Promise<CategoryRule[] | null> {
   try {
     const supabase = getClient()
+    const userId = await getUserId()
+    if (!userId) return null
     const { data, error } = await supabase
       .from('category_rules')
       .select('*')
       .order('pattern', { ascending: true })
     if (error) {
-      console.error('[storage] fetchCategoryRules error:', error)
+      console.error('[storage] fetchCategoryRules error:', error.message, error.code)
       return null
     }
     return (data ?? []).map(rowToCategoryRule)
@@ -385,12 +403,14 @@ function rowToSavingsTarget(row: TargetRow): SavingsTarget {
 export async function fetchSavingsTargets(): Promise<SavingsTarget[] | null> {
   try {
     const supabase = getClient()
+    const userId = await getUserId()
+    if (!userId) return null
     const { data, error } = await supabase
       .from('savings_targets')
       .select('*')
       .order('month', { ascending: true })
     if (error) {
-      console.error('[storage] fetchSavingsTargets error:', error)
+      console.error('[storage] fetchSavingsTargets error:', error.message, error.code)
       return null
     }
     return (data ?? []).map(rowToSavingsTarget)
@@ -450,12 +470,14 @@ function rowToKnowledgeEntry(row: KnowledgeRow): KnowledgeEntry {
 export async function fetchKnowledgeEntries(): Promise<KnowledgeEntry[] | null> {
   try {
     const supabase = getClient()
+    const userId = await getUserId()
+    if (!userId) return null
     const { data, error } = await supabase
       .from('knowledge_entries')
       .select('*')
       .order('date', { ascending: false })
     if (error) {
-      console.error('[storage] fetchKnowledgeEntries error:', error)
+      console.error('[storage] fetchKnowledgeEntries error:', error.message, error.code)
       return null
     }
     return (data ?? []).map(rowToKnowledgeEntry)
@@ -563,12 +585,14 @@ function rowToStoredAnalysis(row: AnalysisRow): StoredAnalysis {
 export async function fetchMonthlyAnalyses(): Promise<StoredAnalysis[] | null> {
   try {
     const supabase = getClient()
+    const userId = await getUserId()
+    if (!userId) return null
     const { data, error } = await supabase
       .from('monthly_analyses')
       .select('*')
       .order('period', { ascending: false })
     if (error) {
-      console.error('[storage] fetchMonthlyAnalyses error:', error)
+      console.error('[storage] fetchMonthlyAnalyses error:', error.message, error.code)
       return null
     }
     return (data ?? []).map(rowToStoredAnalysis)
@@ -581,13 +605,15 @@ export async function fetchMonthlyAnalyses(): Promise<StoredAnalysis[] | null> {
 export async function fetchAnalysisForCycle(cycleId: string): Promise<StoredAnalysis | null> {
   try {
     const supabase = getClient()
+    const userId = await getUserId()
+    if (!userId) return null
     const { data, error } = await supabase
       .from('monthly_analyses')
       .select('*')
       .eq('period', cycleId)
       .maybeSingle()
     if (error) {
-      console.error('[storage] fetchAnalysisForCycle error:', error)
+      console.error('[storage] fetchAnalysisForCycle error:', error.message, error.code)
       return null
     }
     if (!data) return null
@@ -657,7 +683,7 @@ export async function fetchUserSettings(): Promise<UserSettings | null> {
       .eq('user_id', userId)
       .maybeSingle()
     if (error) {
-      console.error('[storage] fetchUserSettings error:', error)
+      console.error('[storage] fetchUserSettings error:', error.message, error.code)
       return null
     }
     // No row yet → return defaults

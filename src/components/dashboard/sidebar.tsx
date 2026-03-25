@@ -15,6 +15,7 @@ import {
   MessageCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { UserProfile } from './user-profile';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -65,9 +66,7 @@ export function Sidebar() {
       </nav>
 
       <div className="p-4 border-t border-card-border">
-        <p className="text-xs text-muted text-center">
-          NatWest Household Tracker
-        </p>
+        <UserProfile />
       </div>
     </aside>
   );
