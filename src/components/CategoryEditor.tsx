@@ -82,7 +82,7 @@ export function CategoryEditor({ transaction, onSaved }: CategoryEditorProps) {
   // Load custom categories when dropdown opens
   useEffect(() => {
     if (open) {
-      setCustomCategories(getCustomCategories());
+      getCustomCategories().then((cats) => setCustomCategories(cats));
     }
   }, [open]);
 
@@ -162,7 +162,7 @@ export function CategoryEditor({ transaction, onSaved }: CategoryEditorProps) {
     setCreatingNew(false);
   };
 
-  const handleCreateCategory = () => {
+  const handleCreateCategory = async () => {
     const name = newCategoryName.trim();
     if (!name) return;
 
@@ -180,7 +180,7 @@ export function CategoryEditor({ transaction, onSaved }: CategoryEditorProps) {
     const color = pickNewColor(usedColors);
 
     // Save to localStorage
-    addCustomCategory(name, color);
+    await addCustomCategory(name, color);
 
     // Update local state
     setCustomCategories((prev) => ({ ...prev, [name]: color }));
@@ -189,7 +189,7 @@ export function CategoryEditor({ transaction, onSaved }: CategoryEditorProps) {
     handleSelectCategory(name);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!selectedCategory) return;
 
     // Derive pattern from merchantName or description
@@ -198,7 +198,7 @@ export function CategoryEditor({ transaction, onSaved }: CategoryEditorProps) {
       transaction.description.replace(/\d{2}\/\d{2}\/\d{4}.*/, '').trim() ||
       transaction.description;
 
-    addCustomRule({
+    await addCustomRule({
       pattern,
       category: selectedCategory,
       isEssential: essential,

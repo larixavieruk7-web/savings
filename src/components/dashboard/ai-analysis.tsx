@@ -47,14 +47,17 @@ export function AIAnalysis() {
   // Load cached analysis for current cycle
   useEffect(() => {
     if (!period || period === 'all') return;
-    const cached = getAnalysisForCycle(period);
-    if (cached) {
-      setAnalysis(cached.analysis as unknown as Analysis);
-      setLastAnalysedAt(cached.analysedAt);
-    } else {
-      setAnalysis(null);
-      setLastAnalysedAt(null);
+    async function loadCached() {
+      const cached = await getAnalysisForCycle(period);
+      if (cached) {
+        setAnalysis(cached.analysis as unknown as Analysis);
+        setLastAnalysedAt(cached.analysedAt);
+      } else {
+        setAnalysis(null);
+        setLastAnalysedAt(null);
+      }
     }
+    loadCached();
   }, [period]);
 
   const runAnalysis = useCallback(async () => {
@@ -122,7 +125,7 @@ export function AIAnalysis() {
         }));
 
       // Get previous analysis summary for trend tracking
-      const previousAnalyses = getAnalysisForCycle(period);
+      const previousAnalyses = await getAnalysisForCycle(period);
       const previousSummary = previousAnalyses?.analysis
         ? (previousAnalyses.analysis as unknown as Analysis).summary
         : undefined;
@@ -169,7 +172,7 @@ export function AIAnalysis() {
 
       setAnalysis(data.analysis);
       setLastAnalysedAt(new Date().toISOString());
-      saveMonthlyAnalysis(period, data.analysis);
+      await saveMonthlyAnalysis(period, data.analysis);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Analysis failed');
     } finally {

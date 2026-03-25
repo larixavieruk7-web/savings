@@ -83,14 +83,16 @@ export default function InsightsPage() {
 
   // Load cached insights and savings target
   useEffect(() => {
-    const cached = getCachedInsights();
-    if (cached && cached.anomalies) {
-      setAnomalies(cached.anomalies as Anomaly[]);
-      setSuggestions(cached.suggestions as SavingsOpp[]);
-      setSummary(cached.summary as InsightsSummary);
-    }
-    const targets = getSavingsTargets();
-    if (targets.length > 0) setSavingsTarget(targets[0]);
+    (async () => {
+      const cached = await getCachedInsights();
+      if (cached && cached.anomalies) {
+        setAnomalies(cached.anomalies as Anomaly[]);
+        setSuggestions(cached.suggestions as SavingsOpp[]);
+        setSummary(cached.summary as InsightsSummary);
+      }
+      const targets = await getSavingsTargets();
+      if (targets.length > 0) setSavingsTarget(targets[0]);
+    })();
   }, []);
 
   const generateInsights = async () => {
@@ -125,14 +127,14 @@ export default function InsightsPage() {
       setSummary(data.summary || null);
 
       // Cache results
-      cacheInsights(data);
+      await cacheInsights(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     }
     setIsLoading(false);
   };
 
-  const saveTarget = () => {
+  const saveTarget = async () => {
     const amount = parseFloat(targetInput) * 100;
     if (isNaN(amount) || amount <= 0) return;
     const now = new Date();
@@ -143,7 +145,7 @@ export default function InsightsPage() {
       targetAmount: amount,
       description: `Save £${targetInput} this month`,
     };
-    saveSavingsTargets([target]);
+    await saveSavingsTargets([target]);
     setSavingsTarget(target);
   };
 

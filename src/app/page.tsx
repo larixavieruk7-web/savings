@@ -502,8 +502,10 @@ function SavingsTargetProgress({
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    setTargets(getSavingsTargets());
-    setLoaded(true);
+    getSavingsTargets().then((t) => {
+      setTargets(t);
+      setLoaded(true);
+    });
   }, []);
 
   const currentMonthKey = format(new Date(), 'yyyy-MM');
@@ -512,7 +514,7 @@ function SavingsTargetProgress({
 
   const currentTarget = targets.find((t) => t.month === currentMonthKey);
 
-  const handleSetTarget = useCallback(() => {
+  const handleSetTarget = useCallback(async () => {
     const amount = Math.round(parseFloat(inputValue) * 100);
     if (isNaN(amount) || amount <= 0) return;
     const newTarget: SavingsTarget = {
@@ -521,7 +523,7 @@ function SavingsTargetProgress({
       targetAmount: amount,
     };
     const updated = [...targets.filter((t) => t.month !== currentMonthKey), newTarget];
-    saveSavingsTargets(updated);
+    await saveSavingsTargets(updated);
     setTargets(updated);
   }, [inputValue, currentMonthKey, targets]);
 

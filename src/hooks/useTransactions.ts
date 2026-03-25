@@ -7,10 +7,10 @@ import {
   clearTransactions,
   updateTransactions,
   saveTransactions,
-  recategorizeAll,
   getAccountTypes,
   saveAccountTypes,
 } from '@/lib/storage';
+import { getLocalTransactions, getLocalAccountTypes } from '@/lib/storage-local';
 import type { Transaction, MonthlyBreakdown, PeriodOption, AccountConfig, SalaryFlow, CategoryCreep, HealthScorecard, Recommendation } from '@/types';
 import { format, parseISO, addMonths, setDate, subMonths } from 'date-fns';
 import { detectAllAccountTypes, reclassifyTransfers } from '@/lib/account-hierarchy';
@@ -106,42 +106,62 @@ function getCycleBoundaries(period: PeriodOption): { start: string | null; end: 
 export function useTransactions() {
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<PeriodOption>(getCurrentCycle().id);
   const loadedRef = useRef(false);
 
   useEffect(() => {
-    if (!loadedRef.current) {
-      loadedRef.current = true;
-      // Re-apply keyword rules on load so new/updated rules take effect
-      recategorizeAll();
+    let cancelled = false;
 
-      // Auto-detect account types and reclassify transfers
-      const txns = getTransactions();
-      const existingTypes = getAccountTypes();
-      const detectedTypes = detectAllAccountTypes(txns, existingTypes);
-      saveAccountTypes(detectedTypes);
+    async function init() {
+      // Show cached data instantly (sync read from localStorage)
+      const cached = getLocalTransactions();
+      if (cached.length > 0 && !loadedRef.current) {
+        setAllTransactions(cached);
+      }
 
-      const { transactions: reclassified, changed } = reclassifyTransfers(txns, detectedTypes);
-      if (changed > 0) saveTransactions(reclassified);
+      // Fetch from Supabase
+      const data = await getTransactions();
 
-      setAllTransactions(getTransactions());
+      if (cancelled) return;
+
+      // Account type detection + reclassification
+      const currentTypes = await getAccountTypes();
+      const detected = detectAllAccountTypes(data, currentTypes);
+      await saveAccountTypes(detected);
+
+      // CRITICAL: reclassifyTransfers returns { transactions, changed } — destructure correctly!
+      const { transactions: reclassified, changed } = reclassifyTransfers(data, detected);
+      if (changed > 0) {
+        await saveTransactions(reclassified);
+      }
+
+      if (cancelled) return;
+
+      setAllTransactions(reclassified);
       setLoaded(true);
+      setLoading(false);
+      loadedRef.current = true;
     }
+
+    init();
+    return () => { cancelled = true; };
   }, []);
 
-  const reload = useCallback(() => {
-    setAllTransactions(getTransactions());
+  const reload = useCallback(async () => {
+    const data = await getTransactions();
+    setAllTransactions(data);
   }, []);
 
-  const addTransactions = useCallback((incoming: Transaction[]) => {
-    const merged = mergeTransactions(incoming);
+  const addTransactions = useCallback(async (incoming: Transaction[]) => {
+    const merged = await mergeTransactions(incoming);
     setAllTransactions(merged);
     return merged;
   }, []);
 
   const updateMany = useCallback(
-    (updates: (Partial<Transaction> & { id: string })[]) => {
-      const updated = updateTransactions(updates);
+    async (updates: (Partial<Transaction> & { id: string })[]) => {
+      const updated = await updateTransactions(updates);
       setAllTransactions(updated);
       return updated;
     },
@@ -149,20 +169,15 @@ export function useTransactions() {
   );
 
   const updateOne = useCallback(
-    (id: string, changes: Partial<Transaction>) => {
-      const all = getTransactions();
-      const idx = all.findIndex((t) => t.id === id);
-      if (idx >= 0) {
-        all[idx] = { ...all[idx], ...changes };
-        saveTransactions(all);
-        setAllTransactions([...all]);
-      }
+    async (id: string, changes: Partial<Transaction>) => {
+      const updated = await updateTransactions([{ id, ...changes }]);
+      setAllTransactions(updated);
     },
     []
   );
 
-  const clear = useCallback(() => {
-    clearTransactions();
+  const clear = useCallback(async () => {
+    await clearTransactions();
     setAllTransactions([]);
   }, []);
 
@@ -296,7 +311,8 @@ export function useTransactions() {
   );
 
   // ─── Account hierarchy ──────────────────────────────────────────
-  const accountTypes = useMemo(() => getAccountTypes(), [allTransactions]);
+  // Read from localStorage cache (sync) — updated during init and after saves
+  const accountTypes = useMemo(() => getLocalAccountTypes(), [allTransactions]);
 
   // ─── Intelligence: salary flow ──────────────────────────────────
   const currentCycleMeta = useMemo(() => {
@@ -359,6 +375,7 @@ export function useTransactions() {
     filteredTransactions,
     // State
     loaded,
+    loading,
     reload,
     addTransactions,
     updateMany,

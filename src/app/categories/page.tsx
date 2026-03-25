@@ -83,8 +83,10 @@ export default function CategoriesPage() {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    setCustomRules(getCustomRules());
-    setLoaded(true);
+    getCustomRules().then((rules) => {
+      setCustomRules(rules);
+      setLoaded(true);
+    });
   }, []);
 
   // Group system rules by category
@@ -125,7 +127,7 @@ export default function CategoriesPage() {
     [transactions]
   );
 
-  const handleAddRule = useCallback(() => {
+  const handleAddRule = useCallback(async () => {
     const trimmed = newPattern.trim();
     if (!trimmed) return;
 
@@ -137,8 +139,8 @@ export default function CategoriesPage() {
       note: newNote.trim() || undefined,
     };
 
-    addCustomRule(rule);
-    setCustomRules(getCustomRules());
+    await addCustomRule(rule);
+    setCustomRules(await getCustomRules());
     reload();
 
     // Reset form
@@ -149,15 +151,15 @@ export default function CategoriesPage() {
   }, [newPattern, newCategory, newEssential, newNote, reload]);
 
   const handleDeleteRule = useCallback(
-    (pattern: string) => {
+    async (pattern: string) => {
       const updated = customRules.filter(
         (r) => r.pattern.toUpperCase() !== pattern.toUpperCase()
       );
-      saveCustomRules(updated);
+      await saveCustomRules(updated);
       setCustomRules(updated);
 
       // Re-categorize affected transactions back to defaults
-      const allTransactions = getTransactions();
+      const allTransactions = await getTransactions();
       const upperPattern = pattern.toUpperCase();
       let changed = false;
       for (const t of allTransactions) {
@@ -176,7 +178,7 @@ export default function CategoriesPage() {
         }
       }
       if (changed) {
-        saveTransactions(allTransactions);
+        await saveTransactions(allTransactions);
         reload();
       }
     },

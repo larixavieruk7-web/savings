@@ -90,7 +90,7 @@ export default function TransactionsPage() {
       );
 
       // Update localStorage directly
-      const all = getTransactions();
+      const all = await getTransactions();
       let updated = 0;
       for (const t of all) {
         const aiResult = resultMap.get(t.id);
@@ -101,7 +101,7 @@ export default function TransactionsPage() {
           updated++;
         }
       }
-      saveTransactions(all);
+      await saveTransactions(all);
       reload();
 
       setCategorizeResult(`AI categorized ${updated} transactions.`);
@@ -195,9 +195,9 @@ export default function TransactionsPage() {
   const allOnPageSelected = paged.length > 0 && paged.every((t) => selectedIds.has(t.id));
   const someOnPageSelected = paged.some((t) => selectedIds.has(t.id));
 
-  const handleBulkApply = useCallback(() => {
+  const handleBulkApply = useCallback(async () => {
     if (!bulkCategory || selectedIds.size === 0) return;
-    const all = getTransactions();
+    const all = await getTransactions();
     for (const t of all) {
       if (selectedIds.has(t.id)) {
         t.category = bulkCategory;
@@ -205,7 +205,7 @@ export default function TransactionsPage() {
         t.categorySource = 'manual';
       }
     }
-    saveTransactions(all);
+    await saveTransactions(all);
     reload();
     setSelectedIds(new Set());
     setBulkCategory('');

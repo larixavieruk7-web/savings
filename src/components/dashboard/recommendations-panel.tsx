@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Recommendation } from '@/types';
 import { getDismissedRecommendations, dismissRecommendation } from '@/lib/storage';
 import { X, AlertTriangle, AlertCircle, Info, PartyPopper, ChevronDown, ChevronUp } from 'lucide-react';
@@ -21,15 +21,19 @@ function formatGBP(pence: number): string {
 }
 
 export function RecommendationsPanel({ recommendations }: { recommendations: Recommendation[] }) {
-  const [dismissed, setDismissed] = useState<Set<string>>(() => new Set(getDismissedRecommendations()));
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState(true);
+
+  useEffect(() => {
+    getDismissedRecommendations().then((ids) => setDismissed(new Set(ids)));
+  }, []);
 
   const visible = recommendations.filter((r) => !dismissed.has(r.id));
 
   if (visible.length === 0) return null;
 
-  function handleDismiss(id: string) {
-    dismissRecommendation(id);
+  async function handleDismiss(id: string) {
+    await dismissRecommendation(id);
     setDismissed((prev) => new Set(prev).add(id));
   }
 
