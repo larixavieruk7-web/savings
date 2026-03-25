@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "compact",
+        "command": "cat .claude/context-essentials.md"
+      }
+    ]
+  }
+}
