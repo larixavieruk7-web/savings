@@ -130,7 +130,20 @@ export function detectOverlappingServices(transactions: Transaction[]): Overlapp
     const totalMonthly = services.reduce((s, svc) => s + svc.monthlyAmount, 0);
 
     const count = services.length;
-    const suggestion = `${count} ${serviceType.toLowerCase()} services at ${formatGBP(totalMonthly)}/month total. Need all of them?`;
+
+    // Build specific consolidation suggestion with names and amounts
+    const sorted = [...services].sort((a, b) => a.monthlyAmount - b.monthlyAmount);
+    const cheapestTwo = sorted.slice(0, 2).map((s) => s.merchant).join(' + ');
+    const dropCandidates = sorted.slice(2);
+
+    let suggestion: string;
+    if (count >= 3 && dropCandidates.length > 0) {
+      const dropList = dropCandidates.map((s) => `${s.merchant} (${formatGBP(s.monthlyAmount)}/mo)`).join(', ');
+      const saveable = dropCandidates.reduce((s, svc) => s + svc.monthlyAmount, 0);
+      suggestion = `${count} ${serviceType.toLowerCase()} services costing ${formatGBP(totalMonthly)}/month. Keep ${cheapestTwo}, consider dropping ${dropList}. Could save ${formatGBP(saveable)}/month.`;
+    } else {
+      suggestion = `${count} ${serviceType.toLowerCase()} services at ${formatGBP(totalMonthly)}/month total. Do you use both? Dropping one saves ${formatGBP(totalMonthly - sorted[0].monthlyAmount)}/month.`;
+    }
 
     results.push({
       serviceType,

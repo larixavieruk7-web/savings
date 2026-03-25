@@ -228,6 +228,7 @@ export type Database = {
           account_types: Json | null
           custom_colors: Json | null
           dismissed_recommendations: string[] | null
+          essential_merchants: string[] | null
           insights_cache: Json | null
           migration_completed_at: string | null
           updated_at: string | null
@@ -238,6 +239,7 @@ export type Database = {
           account_types?: Json | null
           custom_colors?: Json | null
           dismissed_recommendations?: string[] | null
+          essential_merchants?: string[] | null
           insights_cache?: Json | null
           migration_completed_at?: string | null
           updated_at?: string | null
@@ -248,6 +250,7 @@ export type Database = {
           account_types?: Json | null
           custom_colors?: Json | null
           dismissed_recommendations?: string[] | null
+          essential_merchants?: string[] | null
           insights_cache?: Json | null
           migration_completed_at?: string | null
           updated_at?: string | null

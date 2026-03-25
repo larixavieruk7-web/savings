@@ -10,12 +10,35 @@ export interface ContractAlert {
   estimatedSaving: string;     // "Typical saving: £15-25/month"
   firstSeen: string;           // ISO date of first charge
   lastSeen: string;            // ISO date of most recent charge
+  category?: string;           // most common category for this merchant
+  isEssential: boolean;        // true for mortgage, loan, utilities, etc.
+  essentialAdvice?: string;    // contextual advice for essential items
+  recentTransactions: {        // last 3 months for evidence display
+    date: string;
+    description: string;
+    amount: number;
+    account: string;
+  }[];
 }
 
 const INTERNAL_CATEGORIES = new Set([
   'Transfers', 'Savings & Investments', 'Income', 'Salary',
   'Benefits', 'Refunds', 'Other Income',
 ]);
+
+// Categories that are essential commitments — never flag as "still needed?"
+const ESSENTIAL_CATEGORIES = new Set([
+  'Housing', 'Rent / Mortgage', 'Debt Repayments', 'Utilities',
+]);
+
+// Categories where the advice should be "check for better rates" not "cancel"
+const RATE_CHECK_CATEGORIES: Record<string, string> = {
+  'Housing': 'Could you remortgage for a better rate? Check if rates have changed since you fixed.',
+  'Rent / Mortgage': 'Could you remortgage for a better rate? Check if rates have changed since you fixed.',
+  'Debt Repayments': 'What\'s the remaining term? Check if overpaying or switching lender could save on interest.',
+  'Utilities': 'Are you on the best tariff? Compare on Ofgem-accredited sites like Uswitch or Compare the Market.',
+  'Insurance': 'When does this renew? Get comparison quotes 3 weeks before renewal to avoid loyalty tax.',
+};
 
 // Merchant type patterns for generating tailored suggestions
 const MERCHANT_TYPE_PATTERNS: { type: string; patterns: string[] }[] = [
@@ -51,6 +74,28 @@ const MERCHANT_TYPE_PATTERNS: { type: string; patterns: string[] }[] = [
       'NUFFIELD', 'ANYTIME FITNESS', 'PELOTON', 'FIIT', 'STRAVA',
     ],
   },
+  {
+    type: 'mortgage',
+    patterns: [
+      'NATIONWIDE', 'HALIFAX', 'SANTANDER MORTG', 'NATWEST MORTG',
+      'BARCLAYS MORTG', 'HSBC MORTG', 'LLOYDS MORTG',
+    ],
+  },
+  {
+    type: 'loan',
+    patterns: [
+      'NATWEST LOAN', 'BARCLAYS LOAN', 'HSBC LOAN', 'LLOYDS LOAN',
+      'SANTANDER LOAN', 'TESCO LOAN', 'ZOPA', 'FUNDING CIRCLE',
+    ],
+  },
+  {
+    type: 'energy',
+    patterns: [
+      'OCTOPUS ENERGY', 'BRITISH GAS', 'EDF', 'SSE', 'SCOTTISH POWER',
+      'E.ON', 'EON', 'OVO ENERGY', 'BULB', 'SHELL ENERGY',
+      'UTILITY WAREHOUSE',
+    ],
+  },
 ];
 
 function getMerchantType(merchant: string): string {
@@ -63,12 +108,54 @@ function getMerchantType(merchant: string): string {
   return 'default';
 }
 
-function generateSuggestion(merchant: string, monthlyAmount: number, months: number): {
+function generateSuggestion(
+  merchant: string,
+  monthlyAmount: number,
+  months: number,
+  category: string | undefined,
+  isEssential: boolean,
+): {
   suggestion: string;
   estimatedSaving: string;
+  essentialAdvice?: string;
 } {
   const type = getMerchantType(merchant);
   const monthlyGBP = formatGBP(monthlyAmount);
+
+  // Essential items get different messaging
+  if (isEssential && category) {
+    const advice = RATE_CHECK_CATEGORIES[category];
+    if (advice) {
+      return {
+        suggestion: advice,
+        estimatedSaving: 'Check for better rates',
+        essentialAdvice: advice,
+      };
+    }
+  }
+
+  // Merchant-type-specific suggestions for known types
+  if (type === 'mortgage') {
+    return {
+      suggestion: 'Could you remortgage for a better rate? Check if rates have changed since you fixed.',
+      estimatedSaving: 'Check for better rates',
+      essentialAdvice: 'Could you remortgage for a better rate? Check if rates have changed since you fixed.',
+    };
+  }
+  if (type === 'loan') {
+    return {
+      suggestion: 'What\'s the remaining term? Check if overpaying or switching lender could save on interest.',
+      estimatedSaving: 'Check overpayment options',
+      essentialAdvice: 'What\'s the remaining term? Check if overpaying or switching lender could save on interest.',
+    };
+  }
+  if (type === 'energy') {
+    return {
+      suggestion: 'Are you on the best tariff? Compare on Ofgem-accredited sites like Uswitch.',
+      estimatedSaving: 'Typical saving: £10-30/month',
+      essentialAdvice: 'Are you on the best tariff? Compare on Ofgem-accredited sites like Uswitch.',
+    };
+  }
 
   switch (type) {
     case 'phone_broadband':
@@ -80,6 +167,7 @@ function generateSuggestion(merchant: string, monthlyAmount: number, months: num
       return {
         suggestion: 'Get comparison quotes — loyalty tax is real. Same cover is often 20-40% cheaper elsewhere.',
         estimatedSaving: 'Typical saving: £15-30/month',
+        essentialAdvice: 'When does this renew? Get comparison quotes 3 weeks before to avoid loyalty tax.',
       };
     case 'streaming':
       return {
@@ -120,25 +208,33 @@ function normaliseMerchant(raw: string): string {
  * Detect merchants with consistent monthly charges over 12+ months — likely
  * contracts that may be up for renegotiation.
  *
+ * Now category-aware: mortgages, loans, and utilities get different messaging
+ * instead of "still needed?" because obviously they're still needed.
+ *
  * Returns alerts sorted by totalPaid descending (biggest contracts first).
  */
-export function detectContractAlerts(transactions: Transaction[]): ContractAlert[] {
+export function detectContractAlerts(
+  transactions: Transaction[],
+  essentialMerchants: string[] = [],
+): ContractAlert[] {
   // Only look at outflows
   const outflows = transactions.filter(
     (t) => t.amount < 0 && !INTERNAL_CATEGORIES.has(t.category)
   );
 
-  // Group by normalised merchant → month → amounts
+  // Group by normalised merchant → month → amounts + track categories and transactions
   const merchantData = new Map<string, {
     displayName: string;
     months: Map<string, number[]>;  // YYYY-MM → amounts in pence (absolute)
+    categories: Map<string, number>; // category → count
+    transactions: Transaction[];
   }>();
 
   for (const t of outflows) {
     const raw = (t.merchantName || t.description).slice(0, 60);
     const key = normaliseMerchant(raw);
     if (!merchantData.has(key)) {
-      merchantData.set(key, { displayName: raw.trim(), months: new Map() });
+      merchantData.set(key, { displayName: raw.trim(), months: new Map(), categories: new Map(), transactions: [] });
     }
     const data = merchantData.get(key)!;
     // Keep the shortest display name (usually cleaner)
@@ -148,11 +244,16 @@ export function detectContractAlerts(transactions: Transaction[]): ContractAlert
     const month = t.date.slice(0, 7);
     if (!data.months.has(month)) data.months.set(month, []);
     data.months.get(month)!.push(Math.abs(t.amount));
+
+    // Track categories
+    data.categories.set(t.category, (data.categories.get(t.category) || 0) + 1);
+    data.transactions.push(t);
   }
 
+  const essentialSet = new Set(essentialMerchants.map((m) => m.toLowerCase().trim()));
   const alerts: ContractAlert[] = [];
 
-  for (const [, data] of merchantData) {
+  for (const [key, data] of merchantData) {
     const monthKeys = Array.from(data.months.keys()).sort();
     if (monthKeys.length < 12) continue;
 
@@ -192,11 +293,43 @@ export function detectContractAlerts(transactions: Transaction[]): ContractAlert
       totalPaid += amounts.reduce((s, a) => s + a, 0);
     }
 
-    const { suggestion, estimatedSaving } = generateSuggestion(
+    // Determine the most common category for this merchant
+    let topCategory: string | undefined;
+    let maxCount = 0;
+    for (const [cat, count] of data.categories) {
+      if (count > maxCount) {
+        maxCount = count;
+        topCategory = cat;
+      }
+    }
+
+    // Determine if essential: by category, by merchant type, or by user marking
+    const merchantType = getMerchantType(data.displayName);
+    const isEssentialByCategory = topCategory ? ESSENTIAL_CATEGORIES.has(topCategory) : false;
+    const isEssentialByType = ['mortgage', 'loan', 'energy'].includes(merchantType);
+    const isEssentialByUser = essentialSet.has(key);
+    const isEssential = isEssentialByCategory || isEssentialByType || isEssentialByUser;
+
+    const { suggestion, estimatedSaving, essentialAdvice } = generateSuggestion(
       data.displayName,
       avgMonthly,
-      monthKeys.length
+      monthKeys.length,
+      topCategory,
+      isEssential,
     );
+
+    // Get recent transactions for evidence (last 3 months)
+    const recentMonths = monthKeys.slice(-3);
+    const recentTransactions = data.transactions
+      .filter((t) => recentMonths.some((m) => t.date.startsWith(m)))
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, 6)
+      .map((t) => ({
+        date: t.date,
+        description: t.merchantName || t.description,
+        amount: Math.abs(t.amount),
+        account: t.accountName || t.source || 'Unknown',
+      }));
 
     alerts.push({
       merchant: data.displayName,
@@ -207,6 +340,10 @@ export function detectContractAlerts(transactions: Transaction[]): ContractAlert
       estimatedSaving,
       firstSeen: `${firstMonth}-01`,
       lastSeen: `${lastMonth}-01`,
+      category: topCategory,
+      isEssential,
+      essentialAdvice,
+      recentTransactions,
     });
   }
 

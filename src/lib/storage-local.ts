@@ -16,6 +16,7 @@ export const KEYS = {
   knowledgeBank: 'savings_knowledge_bank',
   accountTypes: 'savings_account_types',
   dismissedRecommendations: 'savings_dismissed_recommendations',
+  essentialMerchants: 'savings_essential_merchants',
   monthlyAnalyses: 'savings_monthly_analyses',
   advisorBriefings: 'savings_advisor_briefings',
   spendingTargets: 'savings_spending_targets',
@@ -144,6 +145,16 @@ export function getLocalDismissedRecommendations(): string[] {
 
 export function setLocalDismissedRecommendations(ids: string[]): void {
   writeJson(KEYS.dismissedRecommendations, ids);
+}
+
+// ─── Essential Merchants ──────────────────────────────────────────
+
+export function getLocalEssentialMerchants(): string[] {
+  return readJson<string[]>(KEYS.essentialMerchants, []);
+}
+
+export function setLocalEssentialMerchants(merchants: string[]): void {
+  writeJson(KEYS.essentialMerchants, merchants);
 }
 
 // ─── Insights Cache ───────────────────────────────────────────────

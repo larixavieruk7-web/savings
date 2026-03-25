@@ -17,6 +17,7 @@ export interface UserSettings {
   accountNicknames: Record<string, string>
   accountTypes: AccountConfig[]
   dismissedRecommendations: string[]
+  essentialMerchants: string[]
   insightsCache: Record<string, unknown> | null
   migrationCompletedAt: string | null
 }
@@ -26,6 +27,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   accountNicknames: {},
   accountTypes: [],
   dismissedRecommendations: [],
+  essentialMerchants: [],
   insightsCache: null,
   migrationCompletedAt: null,
 }
@@ -679,6 +681,7 @@ function rowToUserSettings(row: SettingsRow): UserSettings {
     accountNicknames: (row.account_nicknames as Record<string, string>) ?? {},
     accountTypes: (row.account_types as unknown as AccountConfig[]) ?? [],
     dismissedRecommendations: row.dismissed_recommendations ?? [],
+    essentialMerchants: row.essential_merchants ?? [],
     insightsCache: (row.insights_cache as Record<string, unknown>) ?? null,
     migrationCompletedAt: row.migration_completed_at,
   }
@@ -714,6 +717,7 @@ export async function updateUserSettings(
     account_nicknames: Record<string, string>
     account_types: AccountConfig[]
     dismissed_recommendations: string[]
+    essential_merchants: string[]
     insights_cache: Record<string, unknown> | null
     migration_completed_at: string | null
   }>

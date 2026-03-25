@@ -9,6 +9,7 @@ import {
   saveTransactions,
   getAccountTypes,
   saveAccountTypes,
+  getEssentialMerchants,
 } from '@/lib/storage';
 import { getLocalTransactions, getLocalAccountTypes } from '@/lib/storage-local';
 import type { Transaction, MonthlyBreakdown, PeriodOption, AccountConfig, SalaryFlow, CategoryCreep, HealthScorecard, Recommendation } from '@/types';
@@ -117,6 +118,7 @@ export function useTransactions() {
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<PeriodOption>(getCurrentCycle().id);
   const loadedRef = useRef(false);
+  const [essentialMerchants, setEssentialMerchants] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -147,6 +149,10 @@ export function useTransactions() {
       if (cancelled) return;
 
       setAllTransactions(reclassified);
+
+      // Load essential merchants for smart contract alerts
+      getEssentialMerchants().then(setEssentialMerchants).catch(() => {});
+
       setLoaded(true);
       setLoading(false);
       loadedRef.current = true;
@@ -359,8 +365,8 @@ export function useTransactions() {
 
   // ─── Intelligence: contract alerts ─────────────────────────────
   const contractAlerts = useMemo((): ContractAlert[] => {
-    return detectContractAlerts(allTransactions);
-  }, [allTransactions]);
+    return detectContractAlerts(allTransactions, essentialMerchants);
+  }, [allTransactions, essentialMerchants]);
 
   // ─── Intelligence: overlapping services ───────────────────────
   const overlappingServices = useMemo((): OverlappingService[] => {
@@ -410,9 +416,16 @@ export function useTransactions() {
       salaryFlow,
       duplicates,
       contractAlerts,
-      overlappingServices
+      overlappingServices,
+      filteredTransactions,
     );
-  }, [healthScorecard, salaryFlow, categoryCreep, conveniencePremium, allTransactions, contractAlerts, overlappingServices]);
+  }, [healthScorecard, salaryFlow, categoryCreep, conveniencePremium, allTransactions, contractAlerts, overlappingServices, filteredTransactions]);
+
+  // Callback to reload essential merchants (called when user marks a merchant as essential)
+  const reloadEssentialMerchants = useCallback(async () => {
+    const merchants = await getEssentialMerchants();
+    setEssentialMerchants(merchants);
+  }, []);
 
   return {
     // Unfiltered (for upload page etc.)
@@ -456,5 +469,6 @@ export function useTransactions() {
     categoryTrajectory,
     savingsTrajectory,
     yoyComparison,
+    reloadEssentialMerchants,
   };
 }

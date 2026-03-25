@@ -116,6 +116,19 @@ export interface HealthScorecard {
   warnings: string[];            // 0-3 problem areas
 }
 
+export interface RecommendationEvidence {
+  transactions?: {
+    date: string;
+    description: string;
+    amount: number;   // pence (absolute)
+    account: string;
+  }[];
+  accounts?: string[];
+  monthlyBreakdown?: { month: string; amount: number }[];
+  relatedMerchants?: string[];
+  serviceType?: string;
+}
+
 export interface Recommendation {
   id: string;
   severity: 'info' | 'warning' | 'urgent';
@@ -125,6 +138,9 @@ export interface Recommendation {
   merchant?: string;
   potentialSaving: number;       // pence per cycle
   actionType: 'reduce' | 'switch' | 'cancel' | 'review' | 'celebrate';
+  evidence?: RecommendationEvidence;
+  isEssential?: boolean;         // mortgage, loan, utilities — changes messaging
+  essentialAdvice?: string;      // contextual advice for essential items
 }
 
 export type CategoryName =

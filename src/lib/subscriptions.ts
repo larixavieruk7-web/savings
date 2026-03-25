@@ -42,6 +42,16 @@ export interface PotentialDuplicate {
   wastedMonthlyPence: number // min account avg × (n accounts - 1)
 }
 
+/** Same merchant charged 2+ times in the same month on the same account */
+export interface SameAccountDuplicate {
+  merchant: string
+  account: string
+  month: string           // YYYY-MM when doubled
+  chargeCount: number     // how many charges in that month
+  totalAmount: number     // pence (total for that month)
+  avgSingleCharge: number // pence (what one charge usually is)
+}
+
 export interface RecurringMerchant {
   merchant: string
   account: string
@@ -51,14 +61,20 @@ export interface RecurringMerchant {
 
 export interface SubscriptionData {
   potentialDuplicates: PotentialDuplicate[]
+  sameAccountDuplicates: SameAccountDuplicate[]
   recurringMerchants: RecurringMerchant[]
 }
 
 export function computeSubscriptionData(transactions: Transaction[]): SubscriptionData {
   const outflows = transactions.filter((t) => t.amount < 0)
 
-  // normalised key → account → { months, amounts, displayName }
-  const map = new Map<string, Map<string, { months: Set<string>; amounts: number[]; displayName: string }>>()
+  // normalised key → account → { months, amounts, displayName, monthCharges }
+  const map = new Map<string, Map<string, {
+    months: Set<string>;
+    amounts: number[];
+    displayName: string;
+    monthCharges: Map<string, number[]>; // YYYY-MM → list of amounts
+  }>>()
 
   for (const t of outflows) {
     const raw = (t.merchantName || t.description).slice(0, 60)
@@ -68,24 +84,59 @@ export function computeSubscriptionData(transactions: Transaction[]): Subscripti
 
     if (!map.has(key)) map.set(key, new Map())
     const acctMap = map.get(key)!
-    if (!acctMap.has(account)) acctMap.set(account, { months: new Set(), amounts: [], displayName: raw.trim() })
+    if (!acctMap.has(account)) {
+      acctMap.set(account, {
+        months: new Set(),
+        amounts: [],
+        displayName: raw.trim(),
+        monthCharges: new Map(),
+      })
+    }
     const entry = acctMap.get(account)!
     entry.months.add(month)
     entry.amounts.push(Math.abs(t.amount))
+    if (!entry.monthCharges.has(month)) entry.monthCharges.set(month, [])
+    entry.monthCharges.get(month)!.push(Math.abs(t.amount))
   }
 
   const potentialDuplicates: PotentialDuplicate[] = []
+  const sameAccountDuplicates: SameAccountDuplicate[] = []
   const recurringMerchants: RecurringMerchant[] = []
 
   for (const [, acctMap] of map.entries()) {
     const recurringAccounts: RecurringAccountEntry[] = []
-    // Use the shortest display name as the canonical label (usually the cleaner one)
     let displayName = ''
 
     for (const [account, data] of acctMap.entries()) {
       if (!displayName || data.displayName.length < displayName.length) {
         displayName = data.displayName
       }
+
+      // Detect same-account duplicates: subscription merchant charged 2+ times in one month
+      if (data.months.size >= 3) { // must be recurring (3+ months)
+        const avg = Math.round(data.amounts.reduce((a, b) => a + b, 0) / data.amounts.length)
+
+        // Check each month for multiple charges
+        for (const [month, charges] of data.monthCharges) {
+          if (charges.length >= 2) {
+            // Only flag if the individual charges are similar to the average (not a one-off large purchase)
+            const similarCharges = charges.filter(
+              (c) => Math.abs(c - avg) <= avg * 0.5
+            )
+            if (similarCharges.length >= 2) {
+              sameAccountDuplicates.push({
+                merchant: data.displayName,
+                account,
+                month,
+                chargeCount: similarCharges.length,
+                totalAmount: similarCharges.reduce((s, a) => s + a, 0),
+                avgSingleCharge: avg,
+              })
+            }
+          }
+        }
+      }
+
       if (data.months.size >= 2) {
         const avg = Math.round(data.amounts.reduce((a, b) => a + b, 0) / data.amounts.length)
         // < £500/month — filters out loan repayments, rent, etc.
@@ -104,10 +155,12 @@ export function computeSubscriptionData(transactions: Transaction[]): Subscripti
   }
 
   potentialDuplicates.sort((a, b) => b.wastedMonthlyPence - a.wastedMonthlyPence)
+  sameAccountDuplicates.sort((a, b) => b.totalAmount - a.totalAmount)
   recurringMerchants.sort((a, b) => b.avgAmountPence - a.avgAmountPence)
 
   return {
     potentialDuplicates,
+    sameAccountDuplicates,
     recurringMerchants: recurringMerchants.slice(0, 40),
   }
 }

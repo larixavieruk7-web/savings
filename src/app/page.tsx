@@ -62,6 +62,7 @@ export default function DashboardHome() {
     setPeriod,
     availableCycles,
     reload,
+    reloadEssentialMerchants,
   } = useTransactionContext();
 
   const [showSpendingDrilldown, setShowSpendingDrilldown] = useState(false);
@@ -384,7 +385,7 @@ export default function DashboardHome() {
       {/* Health Scorecard + Recommendations */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <HealthScorecardWidget scorecard={healthScorecard} />
-        <RecommendationsPanel recommendations={recommendations} />
+        <RecommendationsPanel recommendations={recommendations} onMarkEssential={reloadEssentialMerchants} />
       </div>
 
       {/* AI Monthly Analysis */}

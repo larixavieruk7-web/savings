@@ -35,6 +35,8 @@ import {
   setLocalAccountTypes,
   getLocalDismissedRecommendations,
   setLocalDismissedRecommendations,
+  getLocalEssentialMerchants,
+  setLocalEssentialMerchants,
   getLocalInsightsCache,
   setLocalInsightsCache,
   getLocalAdvisorBriefings,
@@ -445,6 +447,39 @@ export async function dismissRecommendation(id: string): Promise<void> {
     const ok = await updateUserSettings({ dismissed_recommendations: updated });
     if (ok) setLocalDismissedRecommendations(updated);
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// ESSENTIAL MERCHANTS (mortgage, loan, utilities — don't flag as "still needed?")
+// ═══════════════════════════════════════════════════════════════════════
+
+export async function getEssentialMerchants(): Promise<string[]> {
+  const settings = await fetchUserSettings();
+  if (settings !== null) {
+    setLocalEssentialMerchants(settings.essentialMerchants);
+    return settings.essentialMerchants;
+  }
+  return getLocalEssentialMerchants();
+}
+
+export async function addEssentialMerchant(merchant: string): Promise<void> {
+  const existing = await getEssentialMerchants();
+  const normalised = merchant.toLowerCase().trim();
+  if (!existing.includes(normalised)) {
+    const updated = [...existing, normalised];
+    const ok = await updateUserSettings({ essential_merchants: updated });
+    if (ok) setLocalEssentialMerchants(updated);
+    else setLocalEssentialMerchants(updated); // fallback to localStorage
+  }
+}
+
+export async function removeEssentialMerchant(merchant: string): Promise<void> {
+  const existing = await getEssentialMerchants();
+  const normalised = merchant.toLowerCase().trim();
+  const updated = existing.filter((m) => m !== normalised);
+  const ok = await updateUserSettings({ essential_merchants: updated });
+  if (ok) setLocalEssentialMerchants(updated);
+  else setLocalEssentialMerchants(updated);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
