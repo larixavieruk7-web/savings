@@ -1,5 +1,7 @@
 import type { SalaryFlow, CategoryCreep, HealthScorecard, Recommendation } from '@/types';
 import type { ConveniencePremium } from './convenience-premium';
+import type { ContractAlert } from './contract-alerts';
+import type { OverlappingService } from './overlapping-services';
 import type { PotentialDuplicate } from '../subscriptions';
 import { formatGBP } from './utils';
 
@@ -12,7 +14,9 @@ export function generateRecommendations(
   categoryCreep: CategoryCreep[],
   conveniencePremium: { items: ConveniencePremium[]; totalPremium: number },
   salaryFlow: SalaryFlow,
-  duplicateSubscriptions: PotentialDuplicate[]
+  duplicateSubscriptions: PotentialDuplicate[],
+  contractAlerts?: ContractAlert[],
+  overlappingServices?: OverlappingService[]
 ): Recommendation[] {
   const recs: Recommendation[] = [];
 
@@ -96,6 +100,37 @@ export function generateRecommendations(
       potentialSaving: 0,
       actionType: 'review',
     });
+  }
+
+  // ── Contract alerts (12+ month recurring charges) ──
+  if (contractAlerts && contractAlerts.length > 0) {
+    for (const alert of contractAlerts.slice(0, 3)) {
+      recs.push({
+        id: `contract-${alert.merchant.toLowerCase().replace(/\s+/g, '-').slice(0, 30)}`,
+        severity: alert.monthlyAmount > 3000 ? 'warning' : 'info', // > £30/month = warning
+        title: `${alert.merchant}: ${formatGBP(alert.monthlyAmount)}/month for ${alert.months} months`,
+        detail: `${alert.suggestion} Total paid: ${formatGBP(alert.totalPaid)}. ${alert.estimatedSaving}.`,
+        merchant: alert.merchant,
+        potentialSaving: Math.round(alert.monthlyAmount * 0.2), // conservative 20% saving estimate
+        actionType: 'switch',
+      });
+    }
+  }
+
+  // ── Overlapping services ──
+  if (overlappingServices && overlappingServices.length > 0) {
+    for (const overlap of overlappingServices) {
+      const cheapest = Math.min(...overlap.services.map((s) => s.monthlyAmount));
+      const potentialSaving = overlap.totalMonthly - cheapest; // save everything except the cheapest
+      recs.push({
+        id: `overlap-${overlap.serviceType.toLowerCase().replace(/\s+/g, '-')}`,
+        severity: overlap.services.length >= 3 ? 'warning' : 'info',
+        title: `${overlap.services.length} ${overlap.serviceType} services`,
+        detail: overlap.suggestion,
+        potentialSaving,
+        actionType: 'cancel',
+      });
+    }
   }
 
   return recs.sort((a, b) => {

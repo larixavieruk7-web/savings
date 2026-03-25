@@ -96,6 +96,11 @@ interface ChatContext {
   overdueCommitments?: { commitment: string; type: string; dueCycleId?: string }[]
   recentBriefingSummary?: string
   savingsTrajectory?: { savedYTD: number; targetAnnual: number; projectedAnnual: number }
+  // Phase 7: Pattern detection
+  contractAlerts?: { merchant: string; monthlyAmount: number; months: number; totalPaid: number; suggestion: string; estimatedSaving: string }[]
+  overlappingServices?: { serviceType: string; services: { merchant: string; monthlyAmount: number; account: string }[]; totalMonthly: number; suggestion: string }[]
+  categoryTrajectory?: { category: string; spent: number; target: number; projected: number; daysElapsed: number; daysRemaining: number; paceStatus: string; message: string }[]
+  yoyComparison?: { currentCycle: string; previousYearCycle: string; currentTotal: number; previousTotal: number; difference: number; percentChange: number; headline: string; categoryChanges: { category: string; current: number; previous: number; difference: number; percentChange: number }[] }
 }
 
 function buildContextMessage(context: ChatContext): string {
@@ -256,6 +261,45 @@ function buildContextMessage(context: ChatContext): string {
     parts.push(`- Saved YTD: £${(s.savedYTD / 100).toFixed(2)}`)
     parts.push(`- Target Annual: £${(s.targetAnnual / 100).toFixed(2)}`)
     parts.push(`- Projected Annual: £${(s.projectedAnnual / 100).toFixed(2)} (at current pace)`)
+  }
+
+  // --- PHASE 7: PATTERN DETECTION ---
+  if (context.contractAlerts && context.contractAlerts.length > 0) {
+    parts.push('\n## Contract Alerts (12+ month recurring charges)')
+    for (const a of context.contractAlerts.slice(0, 5)) {
+      parts.push(`- ${a.merchant}: £${(a.monthlyAmount / 100).toFixed(2)}/month for ${a.months} months (total paid: £${(a.totalPaid / 100).toFixed(2)}). ${a.suggestion} ${a.estimatedSaving}`)
+    }
+  }
+
+  if (context.overlappingServices && context.overlappingServices.length > 0) {
+    parts.push('\n## Overlapping Services')
+    for (const o of context.overlappingServices) {
+      const serviceList = o.services.map((s) => `${s.merchant} (£${(s.monthlyAmount / 100).toFixed(2)}/mo on ${s.account})`).join(', ')
+      parts.push(`- ${o.serviceType}: ${serviceList} — total £${(o.totalMonthly / 100).toFixed(2)}/month. ${o.suggestion}`)
+    }
+  }
+
+  if (context.categoryTrajectory && context.categoryTrajectory.length > 0) {
+    const overBudget = context.categoryTrajectory.filter((t) => t.paceStatus === 'over' || t.paceStatus === 'watch')
+    if (overBudget.length > 0) {
+      parts.push('\n## Spending Trajectory Alerts')
+      for (const t of overBudget) {
+        parts.push(`- [${t.paceStatus.toUpperCase()}] ${t.message}`)
+      }
+    }
+  }
+
+  if (context.yoyComparison) {
+    const y = context.yoyComparison
+    parts.push('\n## Year-over-Year Comparison')
+    parts.push(y.headline)
+    if (y.categoryChanges && y.categoryChanges.length > 0) {
+      parts.push('Biggest changes:')
+      for (const c of y.categoryChanges.slice(0, 5)) {
+        const dir = c.difference > 0 ? '+' : ''
+        parts.push(`- ${c.category}: £${(c.current / 100).toFixed(2)} vs £${(c.previous / 100).toFixed(2)} (${dir}${c.percentChange}%)`)
+      }
+    }
   }
 
   if (context.recentBriefingSummary) {

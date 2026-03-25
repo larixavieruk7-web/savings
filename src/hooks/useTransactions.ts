@@ -20,6 +20,14 @@ import { detectConveniencePremiums } from '@/lib/intelligence/convenience-premiu
 import { computeHealthScorecard } from '@/lib/intelligence/health-scorecard';
 import { generateRecommendations } from '@/lib/intelligence/recommendations';
 import { computeSubscriptionData } from '@/lib/subscriptions';
+import { detectContractAlerts } from '@/lib/intelligence/contract-alerts';
+import { detectOverlappingServices } from '@/lib/intelligence/overlapping-services';
+import { projectCategorySpending, projectSavingsTrajectory } from '@/lib/intelligence/trajectory';
+import { compareYearOverYear } from '@/lib/intelligence/yoy-comparison';
+import type { ContractAlert } from '@/lib/intelligence/contract-alerts';
+import type { OverlappingService } from '@/lib/intelligence/overlapping-services';
+import type { CategoryTrajectory, SavingsTrajectory } from '@/lib/intelligence/trajectory';
+import type { YoYComparison } from '@/lib/intelligence/yoy-comparison';
 
 // Categories that represent internal money movement — not real income or spending
 const INTERNAL_CATEGORIES = new Set(['Transfers', 'Savings & Investments']);
@@ -349,6 +357,48 @@ export function useTransactions() {
     );
   }, [salaryFlow, categoryCreep, conveniencePremium.totalPremium, totalIncome, totalSpending, essentialSpending]);
 
+  // ─── Intelligence: contract alerts ─────────────────────────────
+  const contractAlerts = useMemo((): ContractAlert[] => {
+    return detectContractAlerts(allTransactions);
+  }, [allTransactions]);
+
+  // ─── Intelligence: overlapping services ───────────────────────
+  const overlappingServices = useMemo((): OverlappingService[] => {
+    return detectOverlappingServices(allTransactions);
+  }, [allTransactions]);
+
+  // ─── Intelligence: spending trajectory ────────────────────────
+  const categoryTrajectory = useMemo((): CategoryTrajectory[] => {
+    if (!currentCycleMeta) return [];
+    // Build targets map from spending targets if available — empty for now
+    const targets: Record<string, number> = {};
+    return projectCategorySpending(
+      allTransactions,
+      currentCycleMeta.start,
+      currentCycleMeta.end,
+      targets
+    );
+  }, [allTransactions, currentCycleMeta]);
+
+  const savingsTrajectory = useMemo((): SavingsTrajectory | null => {
+    if (!currentCycleMeta) return null;
+    return projectSavingsTrajectory(
+      allTransactions,
+      currentCycleMeta.start,
+      currentCycleMeta.end
+    );
+  }, [allTransactions, currentCycleMeta]);
+
+  // ─── Intelligence: year-over-year comparison ──────────────────
+  const yoyComparison = useMemo((): YoYComparison | null => {
+    if (!currentCycleMeta) return null;
+    return compareYearOverYear(
+      allTransactions,
+      currentCycleMeta.start,
+      currentCycleMeta.end
+    );
+  }, [allTransactions, currentCycleMeta]);
+
   // ─── Intelligence: recommendations ──────────────────────────────
   const recommendations = useMemo((): Recommendation[] => {
     if (!healthScorecard || !salaryFlow) return [];
@@ -358,9 +408,11 @@ export function useTransactions() {
       categoryCreep,
       conveniencePremium,
       salaryFlow,
-      duplicates
+      duplicates,
+      contractAlerts,
+      overlappingServices
     );
-  }, [healthScorecard, salaryFlow, categoryCreep, conveniencePremium, allTransactions]);
+  }, [healthScorecard, salaryFlow, categoryCreep, conveniencePremium, allTransactions, contractAlerts, overlappingServices]);
 
   return {
     // Unfiltered (for upload page etc.)
@@ -399,5 +451,10 @@ export function useTransactions() {
     conveniencePremium,
     healthScorecard,
     recommendations,
+    contractAlerts,
+    overlappingServices,
+    categoryTrajectory,
+    savingsTrajectory,
+    yoyComparison,
   };
 }

@@ -143,6 +143,36 @@ interface SavingsTrajectory {
   targetAnnual: number
 }
 
+interface ContractAlertData {
+  merchant: string
+  monthlyAmount: number
+  months: number
+  totalPaid: number
+  suggestion: string
+  estimatedSaving: string
+}
+
+interface OverlappingServiceData {
+  serviceType: string
+  services: { merchant: string; monthlyAmount: number; account: string }[]
+  totalMonthly: number
+  suggestion: string
+}
+
+interface CategoryTrajectoryData {
+  category: string
+  spent: number
+  projected: number
+  target: number
+  paceStatus: string
+  message: string
+}
+
+interface YoYData {
+  headline: string
+  categoryChanges: { category: string; current: number; previous: number; difference: number; percentChange: number }[]
+}
+
 interface BriefingRequest {
   type: 'upload' | 'weekly' | 'monthly'
   cycleId: string
@@ -158,6 +188,10 @@ interface BriefingRequest {
   categoryCreep?: CategoryCreepItem[]
   healthScorecard?: HealthScorecard
   savingsTrajectory?: SavingsTrajectory
+  contractAlerts?: ContractAlertData[]
+  overlappingServices?: OverlappingServiceData[]
+  categoryTrajectory?: CategoryTrajectoryData[]
+  yoyComparison?: YoYData
 }
 
 function buildUserMessage(data: BriefingRequest): string {
@@ -237,6 +271,51 @@ function buildUserMessage(data: BriefingRequest): string {
     parts.push('## Savings Trajectory')
     parts.push(`- Saved YTD: \u00a3${(st.savedYTD / 100).toFixed(2)}`)
     parts.push(`- Target Annual: \u00a3${(st.targetAnnual / 100).toFixed(2)}`)
+    parts.push('')
+  }
+
+  // Contract alerts
+  if (data.contractAlerts && data.contractAlerts.length > 0) {
+    parts.push('## Contract Alerts (12+ month recurring charges)')
+    for (const a of data.contractAlerts.slice(0, 5)) {
+      parts.push(`- ${a.merchant}: \u00a3${(a.monthlyAmount / 100).toFixed(2)}/month for ${a.months} months (total paid: \u00a3${(a.totalPaid / 100).toFixed(2)}). ${a.suggestion} ${a.estimatedSaving}`)
+    }
+    parts.push('')
+  }
+
+  // Overlapping services
+  if (data.overlappingServices && data.overlappingServices.length > 0) {
+    parts.push('## Overlapping Services')
+    for (const o of data.overlappingServices) {
+      const svcs = o.services.map((s) => `${s.merchant} (\u00a3${(s.monthlyAmount / 100).toFixed(2)}/mo)`).join(', ')
+      parts.push(`- ${o.serviceType}: ${svcs} — total \u00a3${(o.totalMonthly / 100).toFixed(2)}/month. ${o.suggestion}`)
+    }
+    parts.push('')
+  }
+
+  // Spending trajectory
+  if (data.categoryTrajectory && data.categoryTrajectory.length > 0) {
+    const alerts = data.categoryTrajectory.filter((t) => t.paceStatus === 'over' || t.paceStatus === 'watch')
+    if (alerts.length > 0) {
+      parts.push('## Spending Trajectory Alerts')
+      for (const t of alerts) {
+        parts.push(`- [${t.paceStatus.toUpperCase()}] ${t.message}`)
+      }
+      parts.push('')
+    }
+  }
+
+  // Year-over-year comparison
+  if (data.yoyComparison) {
+    parts.push('## Year-over-Year Comparison')
+    parts.push(data.yoyComparison.headline)
+    if (data.yoyComparison.categoryChanges && data.yoyComparison.categoryChanges.length > 0) {
+      parts.push('Biggest changes:')
+      for (const c of data.yoyComparison.categoryChanges.slice(0, 5)) {
+        const dir = c.difference > 0 ? '+' : ''
+        parts.push(`- ${c.category}: \u00a3${(c.current / 100).toFixed(2)} vs \u00a3${(c.previous / 100).toFixed(2)} (${dir}${c.percentChange}%)`)
+      }
+    }
     parts.push('')
   }
 

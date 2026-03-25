@@ -173,6 +173,11 @@ export default function AskPage() {
     recommendations,
     salaryFlow,
     period,
+    contractAlerts,
+    overlappingServices,
+    categoryTrajectory,
+    savingsTrajectory,
+    yoyComparison,
   } = useTransactionContext();
 
   // Advisor hooks — period IS the cycleId (e.g. 'cycle-2026-03')
@@ -303,6 +308,41 @@ export default function AskPage() {
         dueCycleId: c.dueCycleId,
       })) : undefined,
       recentBriefingSummary: latestBriefing ? summariseBriefing(latestBriefing) : undefined,
+      // Phase 7: pattern detection
+      contractAlerts: contractAlerts.length > 0 ? contractAlerts.map((a) => ({
+        merchant: a.merchant,
+        monthlyAmount: a.monthlyAmount,
+        months: a.months,
+        totalPaid: a.totalPaid,
+        suggestion: a.suggestion,
+        estimatedSaving: a.estimatedSaving,
+      })) : undefined,
+      overlappingServices: overlappingServices.length > 0 ? overlappingServices.map((o) => ({
+        serviceType: o.serviceType,
+        services: o.services,
+        totalMonthly: o.totalMonthly,
+        suggestion: o.suggestion,
+      })) : undefined,
+      categoryTrajectory: categoryTrajectory.length > 0 ? categoryTrajectory.map((t) => ({
+        category: t.category,
+        spent: t.spent,
+        target: t.target,
+        projected: t.projected,
+        daysElapsed: t.daysElapsed,
+        daysRemaining: t.daysRemaining,
+        paceStatus: t.paceStatus,
+        message: t.message,
+      })) : undefined,
+      yoyComparison: yoyComparison ? {
+        currentCycle: yoyComparison.currentCycle,
+        previousYearCycle: yoyComparison.previousYearCycle,
+        currentTotal: yoyComparison.currentTotal,
+        previousTotal: yoyComparison.previousTotal,
+        difference: yoyComparison.difference,
+        percentChange: yoyComparison.percentChange,
+        headline: yoyComparison.headline,
+        categoryChanges: yoyComparison.categoryChanges,
+      } : undefined,
     };
   }, [
     categoryBreakdown,
@@ -322,6 +362,10 @@ export default function AskPage() {
     activeCommitments,
     overdueCommitments,
     latestBriefing,
+    contractAlerts,
+    overlappingServices,
+    categoryTrajectory,
+    yoyComparison,
   ]);
 
   const sendMessage = useCallback(
