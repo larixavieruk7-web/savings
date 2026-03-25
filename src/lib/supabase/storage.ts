@@ -120,12 +120,14 @@ function chunk<T>(arr: T[], size: number): T[][] {
 export async function fetchTransactions(): Promise<Transaction[] | null> {
   try {
     const supabase = getClient()
+    const userId = await getUserId()
+    if (!userId) return null
     const { data, error } = await supabase
       .from('transactions')
       .select('*')
       .order('date', { ascending: false })
     if (error) {
-      console.error('[storage] fetchTransactions error:', error)
+      console.error('[storage] fetchTransactions error:', error.message, error.code, error.details)
       return null
     }
     return (data ?? []).map(rowToTransaction)
@@ -689,7 +691,7 @@ export async function updateUserSettings(
         { onConflict: 'user_id' }
       )
     if (error) {
-      console.error('[storage] updateUserSettings error:', error)
+      console.error('[storage] updateUserSettings error:', error.message, error.code, error.details)
       return false
     }
     return true

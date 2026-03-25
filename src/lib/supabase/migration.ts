@@ -21,6 +21,7 @@ import {
 } from '@/lib/storage-local'
 
 import {
+  getUserId,
   isMigrationCompleted,
   markMigrationCompleted,
   updateUserSettings,
@@ -82,6 +83,13 @@ function hasLocalData(): boolean {
 export async function runMigrationIfNeeded(
   onProgress?: ProgressCallback
 ): Promise<boolean> {
+  // 0. Bail out early if user is not authenticated
+  const userId = await getUserId()
+  if (!userId) {
+    report(onProgress, 'complete', 'Not authenticated — skipping migration.', 0, 0)
+    return false
+  }
+
   // 1. Check completion flag in Supabase user_settings
   report(onProgress, 'checking', 'Checking migration status…', 0, 0)
 
