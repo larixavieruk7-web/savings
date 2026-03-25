@@ -160,3 +160,42 @@ export type CategoryName =
   | 'Refunds'
   | 'Other Income'
   | 'Other';
+
+// ─── Advisor System ─────────────────────────────────────────────
+
+export interface AdvisorBriefing {
+  id: string;
+  userId: string;
+  type: 'upload' | 'weekly' | 'monthly';
+  cycleId: string;
+  briefing: Record<string, unknown>;
+  dismissed: boolean;
+  createdAt: string;
+}
+
+export interface SpendingTarget {
+  id: string;
+  userId: string;
+  cycleId: string;
+  category: string;
+  targetAmount: number;      // pence
+  aiSuggested: boolean;
+  previousActual: number;    // pence
+  rollingAverage: number;    // pence
+  createdAt: string;
+}
+
+export interface AdvisorCommitment {
+  id: string;
+  userId: string;
+  cycleId: string;
+  commitment: string;
+  type: 'reduce_spending' | 'renegotiate' | 'cancel' | 'investigate' | 'save' | 'other';
+  status: 'active' | 'completed' | 'missed' | 'deferred';
+  source: 'ai_suggested' | 'user_set';
+  outcome?: string;
+  relatedCategory?: string;
+  relatedMerchant?: string;
+  dueCycleId?: string;
+  createdAt: string;
+}

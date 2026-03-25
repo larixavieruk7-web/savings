@@ -2,7 +2,7 @@
 // This file is ONLY imported by storage.ts (and migration scripts).
 // Never import this directly from hooks or pages.
 
-import type { Transaction, CategoryRule, SavingsTarget, KnowledgeEntry, AccountConfig } from '@/types';
+import type { Transaction, CategoryRule, SavingsTarget, KnowledgeEntry, AccountConfig, AdvisorBriefing, SpendingTarget, AdvisorCommitment } from '@/types';
 
 // ─── Key Registry ────────────────────────────────────────────────
 
@@ -17,6 +17,11 @@ export const KEYS = {
   accountTypes: 'savings_account_types',
   dismissedRecommendations: 'savings_dismissed_recommendations',
   monthlyAnalyses: 'savings_monthly_analyses',
+  advisorBriefings: 'savings_advisor_briefings',
+  spendingTargets: 'savings_spending_targets',
+  advisorCommitments: 'savings_advisor_commitments',
+  lastWeeklyCheckin: 'savings_last_weekly_checkin',
+  categorisationState: 'savings_categorisation_state',
 } as const;
 
 const MIGRATION_KEY = 'savings_migration_progress';
@@ -152,6 +157,62 @@ export function setLocalInsightsCache(data: Record<string, unknown>): void {
     ...data,
     cachedAt: Date.now(),
   });
+}
+
+// ─── Advisor Briefings ───────────────────────────────────────────
+
+export function getLocalAdvisorBriefings(): AdvisorBriefing[] {
+  return readJson<AdvisorBriefing[]>(KEYS.advisorBriefings, []);
+}
+
+export function setLocalAdvisorBriefings(briefings: AdvisorBriefing[]): void {
+  writeJson(KEYS.advisorBriefings, briefings);
+}
+
+// ─── Spending Targets (per-category) ─────────────────────────────
+
+export function getLocalSpendingTargets(): SpendingTarget[] {
+  return readJson<SpendingTarget[]>(KEYS.spendingTargets, []);
+}
+
+export function setLocalSpendingTargets(targets: SpendingTarget[]): void {
+  writeJson(KEYS.spendingTargets, targets);
+}
+
+// ─── Advisor Commitments ─────────────────────────────────────────
+
+export function getLocalAdvisorCommitments(): AdvisorCommitment[] {
+  return readJson<AdvisorCommitment[]>(KEYS.advisorCommitments, []);
+}
+
+export function setLocalAdvisorCommitments(commitments: AdvisorCommitment[]): void {
+  writeJson(KEYS.advisorCommitments, commitments);
+}
+
+// ─── Last Weekly Check-in ────────────────────────────────────────
+
+export function getLocalLastWeeklyCheckin(): string | null {
+  return readJson<string | null>(KEYS.lastWeeklyCheckin, null);
+}
+
+export function setLocalLastWeeklyCheckin(date: string | null): void {
+  writeJson(KEYS.lastWeeklyCheckin, date);
+}
+
+// ─── Categorisation State ────────────────────────────────────────
+
+export interface CategorisationState {
+  total: number;
+  categorized: number;
+  uncategorized: number;
+}
+
+export function getLocalCategorisationState(): CategorisationState | null {
+  return readJson<CategorisationState | null>(KEYS.categorisationState, null);
+}
+
+export function setLocalCategorisationState(state: CategorisationState): void {
+  writeJson(KEYS.categorisationState, state);
 }
 
 // ─── Backup Helpers ───────────────────────────────────────────────

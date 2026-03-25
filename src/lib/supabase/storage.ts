@@ -4,7 +4,7 @@
 
 import { createClient as createBrowserClient } from './client'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Transaction, CategoryRule, SavingsTarget, KnowledgeEntry, AccountConfig } from '@/types'
+import type { Transaction, CategoryRule, SavingsTarget, KnowledgeEntry, AccountConfig, AdvisorBriefing, SpendingTarget, AdvisorCommitment } from '@/types'
 import type { StoredAnalysis } from '@/lib/storage-local'
 import type { Database } from './database.types'
 
@@ -755,4 +755,281 @@ export async function markMigrationCompleted(): Promise<boolean> {
   return updateUserSettings({
     migration_completed_at: new Date().toISOString(),
   })
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ADVISOR BRIEFINGS
+// ═══════════════════════════════════════════════════════════════════
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function rowToAdvisorBriefing(row: any): AdvisorBriefing {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    type: row.type,
+    cycleId: row.cycle_id,
+    briefing: row.briefing as Record<string, unknown>,
+    dismissed: row.dismissed ?? false,
+    createdAt: row.created_at ?? new Date().toISOString(),
+  }
+}
+
+export async function fetchAdvisorBriefings(cycleId?: string): Promise<AdvisorBriefing[] | null> {
+  try {
+    const supabase = getClient()
+    const userId = await getUserId()
+    if (!userId) return null
+
+    let query = supabase
+      .from('advisor_briefings' as never)
+      .select('*')
+      .order('created_at', { ascending: false })
+    if (cycleId) {
+      query = query.eq('cycle_id', cycleId)
+    }
+    const { data, error } = await query
+    if (error) {
+      console.error('[storage] fetchAdvisorBriefings error:', error.message, error.code)
+      return null
+    }
+    return ((data ?? []) as unknown[]).map(rowToAdvisorBriefing)
+  } catch (err) {
+    console.error('[storage] fetchAdvisorBriefings error:', err)
+    return null
+  }
+}
+
+export async function insertAdvisorBriefing(
+  briefing: Omit<AdvisorBriefing, 'id' | 'createdAt'>
+): Promise<boolean> {
+  try {
+    const supabase = getClient()
+    const userId = await getUserId()
+    if (!userId) return false
+
+    const { error } = await supabase
+      .from('advisor_briefings' as never)
+      .insert({
+        user_id: userId,
+        type: briefing.type,
+        cycle_id: briefing.cycleId,
+        briefing: briefing.briefing,
+        dismissed: briefing.dismissed,
+      } as never)
+    if (error) {
+      console.error('[storage] insertAdvisorBriefing error:', error)
+      return false
+    }
+    return true
+  } catch (err) {
+    console.error('[storage] insertAdvisorBriefing error:', err)
+    return false
+  }
+}
+
+export async function updateAdvisorBriefing(
+  id: string,
+  fields: Partial<Pick<AdvisorBriefing, 'dismissed'>>
+): Promise<boolean> {
+  try {
+    const supabase = getClient()
+    const userId = await getUserId()
+    if (!userId) return false
+
+    const update: Record<string, unknown> = {}
+    if (fields.dismissed !== undefined) update.dismissed = fields.dismissed
+
+    const { error } = await supabase
+      .from('advisor_briefings' as never)
+      .update(update as never)
+      .eq('id' as never, id as never)
+    if (error) {
+      console.error('[storage] updateAdvisorBriefing error:', error)
+      return false
+    }
+    return true
+  } catch (err) {
+    console.error('[storage] updateAdvisorBriefing error:', err)
+    return false
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SPENDING TARGETS (per-category)
+// ═══════════════════════════════════════════════════════════════════
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function rowToSpendingTarget(row: any): SpendingTarget {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    cycleId: row.cycle_id,
+    category: row.category,
+    targetAmount: row.target_amount,
+    aiSuggested: row.ai_suggested ?? false,
+    previousActual: row.previous_actual ?? 0,
+    rollingAverage: row.rolling_average ?? 0,
+    createdAt: row.created_at ?? new Date().toISOString(),
+  }
+}
+
+export async function fetchSpendingTargets(cycleId: string): Promise<SpendingTarget[] | null> {
+  try {
+    const supabase = getClient()
+    const userId = await getUserId()
+    if (!userId) return null
+
+    const { data, error } = await supabase
+      .from('spending_targets' as never)
+      .select('*')
+      .eq('cycle_id', cycleId)
+      .order('category', { ascending: true })
+    if (error) {
+      console.error('[storage] fetchSpendingTargets error:', error.message, error.code)
+      return null
+    }
+    return ((data ?? []) as unknown[]).map(rowToSpendingTarget)
+  } catch (err) {
+    console.error('[storage] fetchSpendingTargets error:', err)
+    return null
+  }
+}
+
+export async function upsertSpendingTargets(targets: SpendingTarget[]): Promise<boolean> {
+  if (targets.length === 0) return true
+  try {
+    const supabase = getClient()
+    const userId = await getUserId()
+    if (!userId) return false
+
+    const rows = targets.map(t => ({
+      user_id: userId,
+      cycle_id: t.cycleId,
+      category: t.category,
+      target_amount: t.targetAmount,
+      ai_suggested: t.aiSuggested,
+      previous_actual: t.previousActual,
+      rolling_average: t.rollingAverage,
+    }))
+
+    const { error } = await supabase
+      .from('spending_targets' as never)
+      .upsert(rows as never, { onConflict: 'user_id,cycle_id,category' })
+    if (error) {
+      console.error('[storage] upsertSpendingTargets error:', error)
+      return false
+    }
+    return true
+  } catch (err) {
+    console.error('[storage] upsertSpendingTargets error:', err)
+    return false
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ADVISOR COMMITMENTS
+// ═══════════════════════════════════════════════════════════════════
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function rowToAdvisorCommitment(row: any): AdvisorCommitment {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    cycleId: row.cycle_id,
+    commitment: row.commitment,
+    type: row.type,
+    status: row.status ?? 'active',
+    source: row.source ?? 'ai_suggested',
+    outcome: row.outcome ?? undefined,
+    relatedCategory: row.related_category ?? undefined,
+    relatedMerchant: row.related_merchant ?? undefined,
+    dueCycleId: row.due_cycle_id ?? undefined,
+    createdAt: row.created_at ?? new Date().toISOString(),
+  }
+}
+
+export async function fetchAdvisorCommitments(cycleId?: string): Promise<AdvisorCommitment[] | null> {
+  try {
+    const supabase = getClient()
+    const userId = await getUserId()
+    if (!userId) return null
+
+    let query = supabase
+      .from('advisor_commitments' as never)
+      .select('*')
+      .order('created_at', { ascending: false })
+    if (cycleId) {
+      query = query.eq('cycle_id', cycleId)
+    }
+    const { data, error } = await query
+    if (error) {
+      console.error('[storage] fetchAdvisorCommitments error:', error.message, error.code)
+      return null
+    }
+    return ((data ?? []) as unknown[]).map(rowToAdvisorCommitment)
+  } catch (err) {
+    console.error('[storage] fetchAdvisorCommitments error:', err)
+    return null
+  }
+}
+
+export async function insertAdvisorCommitment(
+  commitment: Omit<AdvisorCommitment, 'id' | 'createdAt'>
+): Promise<boolean> {
+  try {
+    const supabase = getClient()
+    const userId = await getUserId()
+    if (!userId) return false
+
+    const { error } = await supabase
+      .from('advisor_commitments' as never)
+      .insert({
+        user_id: userId,
+        cycle_id: commitment.cycleId,
+        commitment: commitment.commitment,
+        type: commitment.type,
+        status: commitment.status,
+        source: commitment.source,
+        outcome: commitment.outcome ?? null,
+        related_category: commitment.relatedCategory ?? null,
+        related_merchant: commitment.relatedMerchant ?? null,
+        due_cycle_id: commitment.dueCycleId ?? null,
+      } as never)
+    if (error) {
+      console.error('[storage] insertAdvisorCommitment error:', error)
+      return false
+    }
+    return true
+  } catch (err) {
+    console.error('[storage] insertAdvisorCommitment error:', err)
+    return false
+  }
+}
+
+export async function updateAdvisorCommitment(
+  id: string,
+  fields: Partial<Pick<AdvisorCommitment, 'status' | 'outcome'>>
+): Promise<boolean> {
+  try {
+    const supabase = getClient()
+    const userId = await getUserId()
+    if (!userId) return false
+
+    const update: Record<string, unknown> = {}
+    if (fields.status !== undefined) update.status = fields.status
+    if (fields.outcome !== undefined) update.outcome = fields.outcome
+
+    const { error } = await supabase
+      .from('advisor_commitments' as never)
+      .update(update as never)
+      .eq('id' as never, id as never)
+    if (error) {
+      console.error('[storage] updateAdvisorCommitment error:', error)
+      return false
+    }
+    return true
+  } catch (err) {
+    console.error('[storage] updateAdvisorCommitment error:', err)
+    return false
+  }
 }

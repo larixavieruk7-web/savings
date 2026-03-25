@@ -11,7 +11,7 @@
 // Write path: Supabase first → update cache only on success.
 // ═══════════════════════════════════════════════════════════════════════
 
-import type { Transaction, CategoryRule, SavingsTarget, KnowledgeEntry, AccountConfig } from '@/types';
+import type { Transaction, CategoryRule, SavingsTarget, KnowledgeEntry, AccountConfig, AdvisorBriefing, SpendingTarget, AdvisorCommitment } from '@/types';
 import { categorize } from '@/lib/categories';
 
 // ─── localStorage cache layer ──────────────────────────────────────────
@@ -37,7 +37,19 @@ import {
   setLocalDismissedRecommendations,
   getLocalInsightsCache,
   setLocalInsightsCache,
+  getLocalAdvisorBriefings,
+  setLocalAdvisorBriefings,
+  getLocalSpendingTargets,
+  setLocalSpendingTargets,
+  getLocalAdvisorCommitments,
+  setLocalAdvisorCommitments,
+  getLocalLastWeeklyCheckin,
+  setLocalLastWeeklyCheckin,
+  getLocalCategorisationState,
+  setLocalCategorisationState,
 } from '@/lib/storage-local';
+
+export type { CategorisationState } from '@/lib/storage-local';
 
 // Re-export StoredAnalysis so consumers can import from '@/lib/storage'
 export type { StoredAnalysis } from '@/lib/storage-local';
@@ -62,6 +74,14 @@ import {
   upsertMonthlyAnalysis,
   fetchUserSettings,
   updateUserSettings,
+  fetchAdvisorBriefings,
+  insertAdvisorBriefing,
+  updateAdvisorBriefing as supabaseUpdateAdvisorBriefing,
+  fetchSpendingTargets,
+  upsertSpendingTargets,
+  fetchAdvisorCommitments,
+  insertAdvisorCommitment,
+  updateAdvisorCommitment as supabaseUpdateAdvisorCommitment,
 } from '@/lib/supabase/storage';
 
 import type { StoredAnalysis } from '@/lib/storage-local';  // used as value type within this file
@@ -474,3 +494,123 @@ export async function getAnalysisForCycle(cycleId: string): Promise<StoredAnalys
   const local = getLocalMonthlyAnalyses();
   return local.find((a) => a.cycleId === cycleId) ?? null;
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// ADVISOR BRIEFINGS
+// ═══════════════════════════════════════════════════════════════════════
+
+export async function getAdvisorBriefings(cycleId?: string): Promise<AdvisorBriefing[]> {
+  const remote = await fetchAdvisorBriefings(cycleId);
+  if (remote !== null) {
+    setLocalAdvisorBriefings(remote);
+    return remote;
+  }
+  const local = getLocalAdvisorBriefings();
+  if (cycleId) return local.filter((b) => b.cycleId === cycleId);
+  return local;
+}
+
+export async function saveAdvisorBriefing(
+  briefing: Omit<AdvisorBriefing, 'id' | 'createdAt'>
+): Promise<void> {
+  const ok = await insertAdvisorBriefing(briefing);
+  if (ok) {
+    // Refresh cache
+    const all = await fetchAdvisorBriefings();
+    if (all !== null) setLocalAdvisorBriefings(all);
+  }
+}
+
+export async function dismissAdvisorBriefing(id: string): Promise<void> {
+  const ok = await supabaseUpdateAdvisorBriefing(id, { dismissed: true });
+  if (ok) {
+    // Refresh cache
+    const all = await fetchAdvisorBriefings();
+    if (all !== null) setLocalAdvisorBriefings(all);
+  } else {
+    // Fallback: update local cache
+    const local = getLocalAdvisorBriefings();
+    const updated = local.map((b) => (b.id === id ? { ...b, dismissed: true } : b));
+    setLocalAdvisorBriefings(updated);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// SPENDING TARGETS (per-category)
+// ═══════════════════════════════════════════════════════════════════════
+
+export async function getSpendingTargets(cycleId: string): Promise<SpendingTarget[]> {
+  const remote = await fetchSpendingTargets(cycleId);
+  if (remote !== null) {
+    setLocalSpendingTargets(remote);
+    return remote;
+  }
+  const local = getLocalSpendingTargets();
+  return local.filter((t) => t.cycleId === cycleId);
+}
+
+export async function saveSpendingTargets(targets: SpendingTarget[]): Promise<void> {
+  const ok = await upsertSpendingTargets(targets);
+  if (ok) setLocalSpendingTargets(targets);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// ADVISOR COMMITMENTS
+// ═══════════════════════════════════════════════════════════════════════
+
+export async function getAdvisorCommitments(cycleId?: string): Promise<AdvisorCommitment[]> {
+  const remote = await fetchAdvisorCommitments(cycleId);
+  if (remote !== null) {
+    setLocalAdvisorCommitments(remote);
+    return remote;
+  }
+  const local = getLocalAdvisorCommitments();
+  if (cycleId) return local.filter((c) => c.cycleId === cycleId);
+  return local;
+}
+
+export async function saveAdvisorCommitment(
+  commitment: Omit<AdvisorCommitment, 'id' | 'createdAt'>
+): Promise<void> {
+  const ok = await insertAdvisorCommitment(commitment);
+  if (ok) {
+    // Refresh cache
+    const all = await fetchAdvisorCommitments();
+    if (all !== null) setLocalAdvisorCommitments(all);
+  }
+}
+
+export async function updateAdvisorCommitment(
+  id: string,
+  fields: Partial<Pick<AdvisorCommitment, 'status' | 'outcome'>>
+): Promise<void> {
+  const ok = await supabaseUpdateAdvisorCommitment(id, fields);
+  if (ok) {
+    // Refresh cache
+    const all = await fetchAdvisorCommitments();
+    if (all !== null) setLocalAdvisorCommitments(all);
+  } else {
+    // Fallback: update local cache
+    const local = getLocalAdvisorCommitments();
+    const updated = local.map((c) => (c.id === id ? { ...c, ...fields } : c));
+    setLocalAdvisorCommitments(updated);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// LAST WEEKLY CHECK-IN
+// ═══════════════════════════════════════════════════════════════════════
+
+export function getLastWeeklyCheckin(): string | null {
+  return getLocalLastWeeklyCheckin();
+}
+
+export function setLastWeeklyCheckin(date: string | null): void {
+  setLocalLastWeeklyCheckin(date);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// CATEGORISATION STATE
+// ═══════════════════════════════════════════════════════════════════════
+
+export { getLocalCategorisationState as getCategorisationState, setLocalCategorisationState as setCategorisationState };
