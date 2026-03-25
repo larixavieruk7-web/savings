@@ -6,6 +6,9 @@ import { useTransactionContext } from '@/context/transactions';
 import { getKnowledgeEntries, getAccountNicknames } from '@/lib/storage';
 import { computeSubscriptionData } from '@/lib/subscriptions';
 import { formatGBP } from '@/lib/utils';
+import { useSpendingTargets } from '@/hooks/useSpendingTargets';
+import { useCommitments } from '@/hooks/useCommitments';
+import { useAdvisorBriefings } from '@/hooks/useAdvisorBriefings';
 
 interface ChatMessage {
   id: string;
@@ -116,6 +119,38 @@ function renderMarkdown(text: string) {
   return elements;
 }
 
+/** Extract a compact text summary from a briefing's structured data */
+function summariseBriefing(briefing: { type: string; briefing: Record<string, unknown> }): string {
+  const b = briefing.briefing;
+  const parts: string[] = [];
+
+  // headline / summary field
+  if (typeof b.headline === 'string') parts.push(b.headline);
+  if (typeof b.summary === 'string') parts.push(b.summary);
+
+  // key stats
+  if (typeof b.overallGrade === 'string') parts.push(`Grade: ${b.overallGrade}`);
+
+  // key takeaways (array of strings)
+  if (Array.isArray(b.keyTakeaways)) {
+    for (const t of b.keyTakeaways.slice(0, 3)) {
+      if (typeof t === 'string') parts.push(`- ${t}`);
+    }
+  }
+
+  // alerts
+  if (Array.isArray(b.alerts)) {
+    for (const a of b.alerts.slice(0, 3)) {
+      if (typeof a === 'string') parts.push(`ALERT: ${a}`);
+      else if (typeof a === 'object' && a !== null && 'message' in a)
+        parts.push(`ALERT: ${(a as { message: string }).message}`);
+    }
+  }
+
+  if (parts.length === 0) return `[${briefing.type} briefing — no summary available]`;
+  return `[${briefing.type} briefing] ${parts.join('. ')}`;
+}
+
 export default function AskPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -137,7 +172,14 @@ export default function AskPage() {
     categoryCreep,
     recommendations,
     salaryFlow,
+    period,
   } = useTransactionContext();
+
+  // Advisor hooks — period IS the cycleId (e.g. 'cycle-2026-03')
+  const currentCycleId = typeof period === 'string' && period.startsWith('cycle-') ? period : '';
+  const { targets, getProgress } = useSpendingTargets(currentCycleId);
+  const { activeCommitments, overdueCommitments } = useCommitments(currentCycleId);
+  const { latestBriefing } = useAdvisorBriefings(currentCycleId);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -234,6 +276,33 @@ export default function AskPage() {
         creditCardSpending: salaryFlow.creditCardSpending,
         unaccounted: salaryFlow.unaccounted,
       } : undefined,
+      // Advisor system — spending targets with current progress
+      spendingTargets: targets.length > 0 ? targets.map((t) => {
+        // Find current spend from categoryBreakdown (already absolute pence values)
+        const catEntry = categoryBreakdown.find((c) => c.category === t.category);
+        const progress = getProgress(t.category, catEntry ? -(catEntry.amount) : 0);
+        return {
+          category: t.category,
+          targetAmount: t.targetAmount,
+          spent: progress.spent,
+          pct: progress.pct,
+          status: progress.status,
+        };
+      }) : undefined,
+      activeCommitments: activeCommitments.length > 0 ? activeCommitments.map((c) => ({
+        commitment: c.commitment,
+        type: c.type,
+        status: c.status,
+        relatedCategory: c.relatedCategory,
+        relatedMerchant: c.relatedMerchant,
+        dueCycleId: c.dueCycleId,
+      })) : undefined,
+      overdueCommitments: overdueCommitments.length > 0 ? overdueCommitments.map((c) => ({
+        commitment: c.commitment,
+        type: c.type,
+        dueCycleId: c.dueCycleId,
+      })) : undefined,
+      recentBriefingSummary: latestBriefing ? summariseBriefing(latestBriefing) : undefined,
     };
   }, [
     categoryBreakdown,
@@ -248,6 +317,11 @@ export default function AskPage() {
     categoryCreep,
     recommendations,
     salaryFlow,
+    targets,
+    getProgress,
+    activeCommitments,
+    overdueCommitments,
+    latestBriefing,
   ]);
 
   const sendMessage = useCallback(

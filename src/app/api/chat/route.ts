@@ -8,33 +8,33 @@ function getOpenAI() {
   return _openai
 }
 
-const SYSTEM_PROMPT = `You are a prescriptive personal finance advisor built into Larissa and Gus's savings dashboard. You have direct access to their real transaction data, health scorecard, and spending intelligence — every answer must come from that data.
+const SYSTEM_PROMPT = `You are the personal financial advisor for Gus and Larissa's household. You have direct access to their real transaction data, health scorecard, spending targets, commitments, and intelligence signals. You are NOT a chatbot — you are their advisor.
 
-Your job is NOT just to answer questions. You should PUSH BACK on bad patterns, CELEBRATE good habits, and RECOMMEND specific actions.
+PERSONALITY:
+- Celebrate wins genuinely. "Groceries down 8% — the meal planning is paying off."
+- Push back HARD on bad patterns. No sugarcoating. "Dining out: £480 against a £300 target. Third month in a row. Something needs to change."
+- Be specific ALWAYS. Never say "consider reducing spending." Say "Deliveroo 12 times this month, £186. That's £2,232 annualised. Cook twice more per week."
+- Reference their targets and commitments. "You committed to renegotiating Sky. Did you?"
+- If savings rate is below target, mention it in every interaction until it improves.
 
-HARD RULES — never break these:
-- NEVER suggest external apps, tools, or services (no Truebill, YNAB, Monzo, etc.) — you ARE the tool
-- NEVER give generic financial advice — every statement must reference specific numbers, merchants, or accounts from the data
-- NEVER say "I don't have enough information" if the data contains a relevant section — read the full context
-- If a question is about subscriptions or duplicates, check the "Potential Duplicate Subscriptions" and "All Recurring Payments" sections
-- If data shows no duplicates, say exactly that: "I checked your transactions and found no merchants charging from multiple accounts"
-- Format all amounts as £X.XX using the exact figures from the data
-- Keep responses under 200 words — be direct, not thorough
-- Never pad with suggestions that aren't grounded in the actual data shown
-- When the health scorecard or recommendations are present, reference them in your answers
-- If category creep data shows rising categories, proactively flag them even if the user didn't ask
-- If savings rate is below 20%, mention it and suggest specific cuts from the data
+ACCOUNTABILITY:
+- You know their spending targets. Reference them in answers.
+- You know their commitments. Follow up proactively.
+- You know their history. Compare this month to last, and to 3 months ago.
+- Track patterns over time. "This is the third month dining exceeded target."
 
-Context you have access to:
-- Health Scorecard (overall financial health score 0-100 with sub-scores)
-- Active Recommendations (prescriptive, severity-rated push-back items)
-- Category Creep Detection (categories drifting up vs 3-cycle rolling average)
-- Salary Flow (where salary went: credit cards, savings, direct debits, spending)
-- Pre-computed duplicate subscription detection
-- All recurring payments grouped by account
-- Top spending categories and merchants
-- Monthly income/spending/net breakdown
-- Knowledge bank (life events, goals, context)`
+PROACTIVE:
+- Don't just answer the question. Also flag the most important thing they need to know.
+- If category creep is happening, mention it even if they didn't ask.
+- If a commitment is overdue, bring it up.
+- If there's a quick win they haven't acted on, nudge them.
+
+HARD RULES:
+- NEVER suggest external apps or services. You ARE the tool.
+- NEVER give generic advice. Every statement must reference their data.
+- Format amounts as £X.XX from their actual figures.
+- Keep responses under 200 words. Be direct, not thorough.
+- Never say "I don't have enough information" if the data contains relevant sections.`
 
 interface RecurringAccountEntry {
   account: string
@@ -90,6 +90,12 @@ interface ChatContext {
     creditCardSpending: number
     unaccounted: number
   }
+  // Advisor system
+  spendingTargets?: { category: string; targetAmount: number; spent: number; pct: number; status: string }[]
+  activeCommitments?: { commitment: string; type: string; status: string; relatedCategory?: string; relatedMerchant?: string; dueCycleId?: string }[]
+  overdueCommitments?: { commitment: string; type: string; dueCycleId?: string }[]
+  recentBriefingSummary?: string
+  savingsTrajectory?: { savedYTD: number; targetAnnual: number; projectedAnnual: number }
 }
 
 function buildContextMessage(context: ChatContext): string {
@@ -214,6 +220,47 @@ function buildContextMessage(context: ChatContext): string {
       const tags = e.tags && e.tags.length > 0 ? ` [${e.tags.join(', ')}]` : ''
       parts.push(`- [${e.date}] ${e.title}: ${e.description}${tags}`)
     }
+  }
+
+  // --- ADVISOR SYSTEM ---
+  if (context.spendingTargets && context.spendingTargets.length > 0) {
+    parts.push('\n## Spending Targets (this cycle)')
+    for (const t of context.spendingTargets) {
+      parts.push(`- ${t.category}: £${(t.spent / 100).toFixed(2)} / £${(t.targetAmount / 100).toFixed(2)} target (${t.pct}%, ${t.status})`)
+    }
+  }
+
+  if (context.activeCommitments && context.activeCommitments.length > 0) {
+    parts.push('\n## Active Commitments')
+    const overdueIds = new Set(
+      (context.overdueCommitments ?? []).map((c) => c.commitment)
+    )
+    for (const c of context.activeCommitments) {
+      const overdueTag = overdueIds.has(c.commitment) ? '[OVERDUE] ' : ''
+      const details: string[] = [`type: ${c.type}`]
+      if (c.relatedCategory) details.push(`category: ${c.relatedCategory}`)
+      if (c.relatedMerchant) details.push(`merchant: ${c.relatedMerchant}`)
+      if (c.dueCycleId) details.push(`due: ${c.dueCycleId}`)
+      parts.push(`- ${overdueTag}${c.commitment} (${details.join(', ')})`)
+    }
+  } else if (context.overdueCommitments && context.overdueCommitments.length > 0) {
+    parts.push('\n## Overdue Commitments')
+    for (const c of context.overdueCommitments) {
+      parts.push(`- [OVERDUE] ${c.commitment} (type: ${c.type}, due: ${c.dueCycleId ?? 'unknown'})`)
+    }
+  }
+
+  if (context.savingsTrajectory) {
+    const s = context.savingsTrajectory
+    parts.push('\n## Savings Trajectory')
+    parts.push(`- Saved YTD: £${(s.savedYTD / 100).toFixed(2)}`)
+    parts.push(`- Target Annual: £${(s.targetAnnual / 100).toFixed(2)}`)
+    parts.push(`- Projected Annual: £${(s.projectedAnnual / 100).toFixed(2)} (at current pace)`)
+  }
+
+  if (context.recentBriefingSummary) {
+    parts.push('\n## Recent Advisor Briefing')
+    parts.push(context.recentBriefingSummary)
   }
 
   return parts.length > 0

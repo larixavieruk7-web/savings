@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Upload, TrendingUp, Brain, TrendingDown, ArrowUpRight, ArrowDownRight, Target, ShieldCheck, Sparkles, PiggyBank, Banknote, Landmark, X, ChevronDown } from 'lucide-react';
+import { Upload, TrendingUp, Brain, TrendingDown, ArrowUpRight, ArrowDownRight, Target, ShieldCheck, Sparkles, PiggyBank, Banknote, Landmark, X, ChevronDown, FileText } from 'lucide-react';
 import Link from 'next/link';
 import { useTransactionContext } from '@/context/transactions';
 import { formatGBP, formatChange, gbpTooltipFormatter } from '@/lib/utils';
@@ -17,6 +17,13 @@ import { SalaryFlowChart } from '@/components/dashboard/salary-flow';
 import { AIAnalysis } from '@/components/dashboard/ai-analysis';
 import { OverspendingAlert, StopTheBleeding } from '@/components/dashboard/overspending-alert';
 import { CategorisationShepherd } from '@/components/advisor/categorisation-shepherd';
+import { AdvisorBriefingCard } from '@/components/advisor/briefing-card';
+import { TargetTracker } from '@/components/advisor/target-tracker';
+import { TargetSetupWizard } from '@/components/advisor/target-setup-wizard';
+import { CommitmentList } from '@/components/advisor/commitment-list';
+import { useSpendingTargets } from '@/hooks/useSpendingTargets';
+import { useAdvisorBriefings } from '@/hooks/useAdvisorBriefings';
+import { useCommitments } from '@/hooks/useCommitments';
 import {
   PieChart,
   Pie,
@@ -53,10 +60,98 @@ export default function DashboardHome() {
     categoryCreep,
     period,
     setPeriod,
+    availableCycles,
     reload,
   } = useTransactionContext();
 
   const [showSpendingDrilldown, setShowSpendingDrilldown] = useState(false);
+  const [wizardDismissed, setWizardDismissed] = useState(false);
+
+  // ─── Advisor hooks ────────────────────────────────────────────────
+  // The cycleId for advisor hooks — use the current period if it's a cycle, fallback to current cycle
+  const cycleId = period !== 'all' && period.startsWith('cycle-') ? period : (availableCycles[0]?.id ?? 'cycle-2026-01');
+
+  const { targets, saveTargets } = useSpendingTargets(cycleId);
+  const { latestBriefing, dismissBriefing } = useAdvisorBriefings(cycleId);
+  const { commitments, activeCommitments, completeCommitment, deferCommitment } = useCommitments(cycleId);
+
+  // ─── Compute spendingByCategory for TargetTracker ─────────────────
+  const spendingByCategory = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const t of transactions) {
+      if (t.amount < 0 && !INTERNAL_CATEGORIES.has(t.category)) {
+        map[t.category] = (map[t.category] || 0) + Math.abs(t.amount);
+      }
+    }
+    return map;
+  }, [transactions]);
+
+  // ─── Compute historicalSpending for TargetSetupWizard ─────────────
+  const historicalSpending = useMemo(() => {
+    // Need at least some cycles to build history
+    if (!availableCycles || availableCycles.length === 0) return [];
+
+    // Find the current cycle index and get up to 3 previous cycles
+    const currentIdx = availableCycles.findIndex((c) => c.id === cycleId);
+    // availableCycles is sorted most-recent-first, so previous cycles are at higher indices
+    const historyCycles = availableCycles.slice(
+      Math.max(0, currentIdx + 1),
+      currentIdx + 4
+    ).reverse(); // oldest first for display
+
+    if (historyCycles.length === 0) return [];
+
+    // Compute spending per category per cycle
+    const cycleSpending: Record<string, number[]> = {};
+
+    for (const cycle of historyCycles) {
+      const cycleTxns = allTransactions.filter(
+        (t) => t.date >= cycle.start && t.date <= cycle.end && t.amount < 0 && !INTERNAL_CATEGORIES.has(t.category)
+      );
+
+      const categoryTotals: Record<string, number> = {};
+      for (const t of cycleTxns) {
+        categoryTotals[t.category] = (categoryTotals[t.category] || 0) + Math.abs(t.amount);
+      }
+
+      // Add each category's spending for this cycle
+      const allCats = new Set([...Object.keys(categoryTotals), ...Object.keys(cycleSpending)]);
+      for (const cat of allCats) {
+        if (!cycleSpending[cat]) cycleSpending[cat] = [];
+        cycleSpending[cat].push(categoryTotals[cat] || 0);
+      }
+    }
+
+    // Build the array of { category, last3Cycles, average }
+    return Object.entries(cycleSpending)
+      .map(([category, amounts]) => ({
+        category,
+        last3Cycles: amounts,
+        average: amounts.length > 0 ? Math.round(amounts.reduce((s, v) => s + v, 0) / amounts.length) : 0,
+      }))
+      .filter((h) => h.average > 0)
+      .sort((a, b) => b.average - a.average);
+  }, [allTransactions, availableCycles, cycleId]);
+
+  // ─── Cycle day calculations for TargetTracker ─────────────────────
+  const currentCycle = useMemo(
+    () => availableCycles.find((c) => c.id === cycleId) ?? null,
+    [availableCycles, cycleId]
+  );
+
+  const daysInCycle = useMemo(() => {
+    if (!currentCycle) return 30;
+    const start = new Date(currentCycle.start);
+    const end = new Date(currentCycle.end);
+    return Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+  }, [currentCycle]);
+
+  const daysLeftInCycle = useMemo(() => {
+    if (!currentCycle) return 15;
+    const now = new Date();
+    const end = new Date(currentCycle.end);
+    return Math.max(0, Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+  }, [currentCycle]);
 
   if (!loaded) {
     return (
@@ -153,11 +248,61 @@ export default function DashboardHome() {
         </div>
       </div>
 
-      {/* Categorisation nag — blocks proper analysis until sorted */}
+      {/* ── ADVISOR-LED SECTIONS ─────────────────────────────────── */}
+
+      {/* 1. Categorisation nag — blocks proper analysis until sorted */}
       <CategorisationShepherd
         transactions={allTransactions}
         onCategorizeComplete={reload}
       />
+
+      {/* 2. Target Setup Wizard — show when no targets for current cycle */}
+      {targets.length === 0 && !wizardDismissed && historicalSpending.length > 0 && period !== 'all' && (
+        <TargetSetupWizard
+          cycleId={cycleId}
+          historicalSpending={historicalSpending}
+          onComplete={(newTargets) => {
+            saveTargets(newTargets);
+          }}
+          onDismiss={() => setWizardDismissed(true)}
+        />
+      )}
+
+      {/* 3. Latest Advisor Briefing — hero section */}
+      {latestBriefing ? (
+        <AdvisorBriefingCard
+          briefing={latestBriefing}
+          onDismiss={dismissBriefing}
+        />
+      ) : allTransactions.length > 0 ? (
+        <div className="bg-card border border-card-border rounded-xl p-6 text-center">
+          <FileText className="h-8 w-8 text-muted mx-auto mb-2" />
+          <p className="text-sm text-muted">
+            No advisor briefing yet. Upload bank statements to get started.
+          </p>
+        </div>
+      ) : null}
+
+      {/* 4. Target Tracker — compact, if targets exist */}
+      {targets.length > 0 && (
+        <TargetTracker
+          targets={targets}
+          spendingByCategory={spendingByCategory}
+          daysLeftInCycle={daysLeftInCycle}
+          daysInCycle={daysInCycle}
+        />
+      )}
+
+      {/* 5. Commitment List — active commitments */}
+      {(activeCommitments.length > 0 || commitments.some((c) => c.status === 'completed')) && (
+        <CommitmentList
+          commitments={commitments}
+          onComplete={completeCommitment}
+          onDefer={deferCommitment}
+        />
+      )}
+
+      {/* ── EXISTING DATA VIEWS ──────────────────────────────────── */}
 
       {/* Duplicate subscription warning */}
       <DuplicateSubscriptionAlert duplicates={potentialDuplicates} />
