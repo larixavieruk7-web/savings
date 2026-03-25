@@ -164,24 +164,9 @@ interface BackupMeta {
 }
 
 export function backupLocalStorage(): string {
-  if (typeof window === 'undefined') return '';
-
-  const suffix = `_backup_v1_${Date.now()}`;
-  const allKeys = Object.values(KEYS) as string[];
-
-  for (const key of allKeys) {
-    const raw = localStorage.getItem(key);
-    if (raw !== null) {
-      localStorage.setItem(`${key}${suffix}`, raw);
-    }
-  }
-
-  // Track backup entries in an index so cleanupBackups can find them
-  const meta = readJson<BackupMeta[]>(BACKUP_META_KEY, []);
-  meta.push({ suffix, createdAt: Date.now() });
-  writeJson(BACKUP_META_KEY, meta);
-
-  return suffix;
+  // No-op: localStorage data is never deleted during migration, so a backup
+  // is unnecessary and can exceed the ~5 MB localStorage quota.
+  return '';
 }
 
 export function cleanupBackups(maxAgeDays = 30): void {
