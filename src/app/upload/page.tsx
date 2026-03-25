@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Upload,
   AlertCircle,
@@ -27,9 +28,11 @@ interface ImportResult {
 export default function UploadPage() {
   const { addTransactions, allTransactions: existingTransactions } =
     useTransactionContext();
+  const router = useRouter();
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [importResults, setImportResults] = useState<ImportResult[]>([]);
+  const [redirectMessage, setRedirectMessage] = useState('');
 
   const processFile = useCallback(
     (file: File): Promise<{ result: ImportResult; transactions: Transaction[] }> => {
@@ -140,8 +143,16 @@ export default function UploadPage() {
 
       setImportResults(results);
       setIsProcessing(false);
+
+      // Redirect to dashboard after successful import so shepherd can categorize
+      if (totalNewAdded > 0) {
+        setRedirectMessage(`Upload complete! ${totalNewAdded} new transactions. Redirecting to categorize...`);
+        setTimeout(() => {
+          router.push('/');
+        }, 2000);
+      }
     },
-    [addTransactions, existingTransactions.length, processFile]
+    [addTransactions, existingTransactions.length, processFile, router]
   );
 
   const handleDrop = useCallback(
@@ -308,6 +319,14 @@ export default function UploadPage() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Redirect message after successful upload */}
+      {redirectMessage && (
+        <div className="bg-accent/10 border border-accent/30 rounded-xl p-4 flex items-center gap-3">
+          <Brain className="h-5 w-5 text-accent animate-pulse" />
+          <p className="text-sm font-medium text-foreground">{redirectMessage}</p>
         </div>
       )}
 

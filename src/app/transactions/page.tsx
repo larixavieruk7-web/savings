@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useTransactionContext } from '@/context/transactions';
 import { formatGBP } from '@/lib/utils';
 import { saveTransactions, getTransactions } from '@/lib/storage';
@@ -33,15 +34,33 @@ function isBulkEssentialDefault(category: string): boolean {
 }
 
 export default function TransactionsPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-64"><p className="text-muted">Loading...</p></div>}>
+      <TransactionsPageInner />
+    </Suspense>
+  );
+}
+
+function TransactionsPageInner() {
+  const searchParams = useSearchParams();
   const { transactions, loaded, reload } = useTransactionContext();
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [uncategorizedFilter, setUncategorizedFilter] = useState(false);
   const [sortField, setSortField] = useState<SortField>('date');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [page, setPage] = useState(0);
   const perPage = 50;
   const [isCategorizing, setIsCategorizing] = useState(false);
   const [categorizeResult, setCategorizeResult] = useState('');
+
+  // Read ?filter=uncategorized from URL on mount
+  useEffect(() => {
+    if (searchParams.get('filter') === 'uncategorized') {
+      setCategoryFilter('Other');
+      setUncategorizedFilter(true);
+    }
+  }, [searchParams]);
 
   // Bulk selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -133,6 +152,11 @@ export default function TransactionsPage() {
       result = result.filter((t) => t.category === categoryFilter);
     }
 
+    // When arriving via ?filter=uncategorized, also exclude manually-set 'Other'
+    if (uncategorizedFilter) {
+      result = result.filter((t) => t.amount < 0 && t.categorySource !== 'manual');
+    }
+
     result = [...result].sort((a, b) => {
       let cmp = 0;
       switch (sortField) {
@@ -153,7 +177,7 @@ export default function TransactionsPage() {
     });
 
     return result;
-  }, [transactions, search, categoryFilter, sortField, sortDir]);
+  }, [transactions, search, categoryFilter, uncategorizedFilter, sortField, sortDir]);
 
   const paged = filtered.slice(page * perPage, (page + 1) * perPage);
   const totalPages = Math.ceil(filtered.length / perPage);

@@ -16,6 +16,7 @@ import { RecommendationsPanel } from '@/components/dashboard/recommendations-pan
 import { SalaryFlowChart } from '@/components/dashboard/salary-flow';
 import { AIAnalysis } from '@/components/dashboard/ai-analysis';
 import { OverspendingAlert, StopTheBleeding } from '@/components/dashboard/overspending-alert';
+import { CategorisationShepherd } from '@/components/advisor/categorisation-shepherd';
 import {
   PieChart,
   Pie,
@@ -52,6 +53,7 @@ export default function DashboardHome() {
     categoryCreep,
     period,
     setPeriod,
+    reload,
   } = useTransactionContext();
 
   const [showSpendingDrilldown, setShowSpendingDrilldown] = useState(false);
@@ -150,6 +152,12 @@ export default function DashboardHome() {
           <PeriodSelector />
         </div>
       </div>
+
+      {/* Categorisation nag — blocks proper analysis until sorted */}
+      <CategorisationShepherd
+        transactions={allTransactions}
+        onCategorizeComplete={reload}
+      />
 
       {/* Duplicate subscription warning */}
       <DuplicateSubscriptionAlert duplicates={potentialDuplicates} />
