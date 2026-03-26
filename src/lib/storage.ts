@@ -207,8 +207,26 @@ export async function saveCustomRules(rules: CategoryRule[]): Promise<void> {
   if (ok) setLocalCustomRules(rules);
 }
 
-/** Add a user correction rule and re-categorize matching transactions */
-export async function addCustomRule(rule: CategoryRule): Promise<void> {
+/** Count how many transactions match a pattern (for preview before applying a rule) */
+export async function countMatchingTransactions(pattern: string): Promise<{ total: number; otherCategory: number }> {
+  const transactions = await getTransactions();
+  const upper = pattern.toUpperCase();
+  let total = 0;
+  let otherCategory = 0;
+  for (const t of transactions) {
+    if (
+      t.description.toUpperCase().includes(upper) ||
+      t.merchantName?.toUpperCase().includes(upper)
+    ) {
+      total++;
+      if (t.category === 'Other') otherCategory++;
+    }
+  }
+  return { total, otherCategory };
+}
+
+/** Add a user correction rule and re-categorize matching transactions. Returns count of updated transactions. */
+export async function addCustomRule(rule: CategoryRule): Promise<number> {
   // 1. Save the rule (upsert on user_id + pattern)
   const rules = await getCustomRules();
   const idx = rules.findIndex(
@@ -258,6 +276,8 @@ export async function addCustomRule(rule: CategoryRule): Promise<void> {
       setLocalTransactions(patched);
     }
   }
+
+  return changedUpdates.length;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
