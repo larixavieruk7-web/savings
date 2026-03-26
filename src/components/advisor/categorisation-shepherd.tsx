@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { AlertTriangle, Loader2, CheckCircle2, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 import type { Transaction } from '@/types';
@@ -8,6 +8,7 @@ import type { Transaction } from '@/types';
 interface CategorisationShepherdProps {
   transactions: Transaction[];
   onCategorizeComplete?: () => void;
+  autoStart?: boolean;
 }
 
 type ShepherdState = 'idle' | 'categorizing' | 'partial' | 'done';
@@ -17,6 +18,7 @@ const BATCH_SIZE = 150;
 export function CategorisationShepherd({
   transactions,
   onCategorizeComplete,
+  autoStart = false,
 }: CategorisationShepherdProps) {
   const [state, setState] = useState<ShepherdState>('idle');
   const [batchesDone, setBatchesDone] = useState(0);
@@ -38,6 +40,9 @@ export function CategorisationShepherd({
   );
 
   const count = uncategorized.length;
+
+  // Auto-start flag
+  const [autoStarted, setAutoStarted] = useState(false);
 
   const handleCategorize = useCallback(async () => {
     if (uncategorized.length === 0) return;
@@ -119,6 +124,15 @@ export function CategorisationShepherd({
       onCategorizeComplete?.();
     }
   }, [uncategorized, onCategorizeComplete]);
+
+  // Auto-start categorization when prop is set and there are uncategorized transactions
+  useEffect(() => {
+    if (autoStart && !autoStarted && count > 0 && state === 'idle') {
+      setAutoStarted(true);
+      const timer = setTimeout(() => handleCategorize(), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [autoStart, autoStarted, count, state, handleCategorize]);
 
   const handleDismiss = useCallback(() => {
     setDismissed(true);

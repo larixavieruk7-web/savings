@@ -356,10 +356,10 @@ export async function POST(req: NextRequest) {
     const completion = await withRetry(
       () =>
         openai.chat.completions.create({
-          model: 'gpt-5',
+          model: 'gpt-5.4-mini',
           messages,
           temperature: 0.7,
-          max_tokens: 1000,
+          max_completion_tokens: 1000,
         }),
       {
         isRetryable: isRetryableOpenAIError,

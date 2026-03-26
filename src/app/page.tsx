@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Upload, TrendingUp, Brain, TrendingDown, ArrowUpRight, ArrowDownRight, Target, ShieldCheck, Sparkles, PiggyBank, Banknote, Landmark, X, ChevronDown, FileText } from 'lucide-react';
 import Link from 'next/link';
 import { useTransactionContext } from '@/context/transactions';
@@ -14,7 +14,7 @@ import { computeSubscriptionData } from '@/lib/subscriptions';
 import { HealthScorecardWidget } from '@/components/dashboard/health-scorecard';
 import { RecommendationsPanel } from '@/components/dashboard/recommendations-panel';
 import { SalaryFlowChart } from '@/components/dashboard/salary-flow';
-import { AIAnalysis } from '@/components/dashboard/ai-analysis';
+import { AIAnalysis, type AIAnalysisHandle } from '@/components/dashboard/ai-analysis';
 import { OverspendingAlert, StopTheBleeding } from '@/components/dashboard/overspending-alert';
 import { CategorisationShepherd } from '@/components/advisor/categorisation-shepherd';
 import { AdvisorBriefingCard } from '@/components/advisor/briefing-card';
@@ -75,6 +75,56 @@ export default function DashboardHome() {
   const { targets, saveTargets } = useSpendingTargets(cycleId);
   const { latestBriefing, dismissBriefing, generateBriefing, shouldShowWeeklyCheckin } = useAdvisorBriefings(cycleId);
   const { commitments, activeCommitments, completeCommitment, deferCommitment } = useCommitments(cycleId);
+
+  // ─── Auto-pipeline state ────────────────────────────────────────────
+  const analysisRef = useRef<AIAnalysisHandle>(null);
+  const [categorizationDone, setCategorizationDone] = useState(false);
+  const [analysisDone, setAnalysisDone] = useState(false);
+
+  const handleCategorizationComplete = useCallback(() => {
+    reload();
+    setCategorizationDone(true);
+  }, [reload]);
+
+  const handleAnalysisComplete = useCallback(() => {
+    setAnalysisDone(true);
+  }, []);
+
+  // Auto-generate upload briefing after analysis completes
+  useEffect(() => {
+    if (!analysisDone || !categorizationDone) return;
+    // Reset flags so it doesn't re-trigger
+    setAnalysisDone(false);
+    setCategorizationDone(false);
+
+    // Build context for upload briefing
+    const byCategory: Record<string, { spent: number; target: number; txnCount: number }> = {};
+    for (const t of transactions) {
+      if (t.amount < 0 && !INTERNAL_CATEGORIES.has(t.category)) {
+        if (!byCategory[t.category]) byCategory[t.category] = { spent: 0, target: 0, txnCount: 0 };
+        byCategory[t.category].spent += Math.abs(t.amount);
+        byCategory[t.category].txnCount++;
+      }
+    }
+    for (const t of targets) {
+      if (byCategory[t.category]) byCategory[t.category].target = t.targetAmount;
+    }
+    const topMerchants = Object.entries(
+      transactions.filter(t => t.amount < 0).reduce((acc, t) => {
+        const m = t.merchantName || t.description;
+        acc[m] = acc[m] || { merchant: m, amount: 0, count: 0 };
+        acc[m].amount += Math.abs(t.amount);
+        acc[m].count++;
+        return acc;
+      }, {} as Record<string, { merchant: string; amount: number; count: number }>)
+    ).map(([, v]) => v).sort((a, b) => b.amount - a.amount).slice(0, 10);
+
+    generateBriefing('upload', {
+      currentCycleData: { totalIncome, totalSpending, byCategory, topMerchants },
+      targets: targets.map(t => ({ category: t.category, targetAmount: t.targetAmount, spent: spendingByCategory[t.category] || 0 })),
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysisDone, categorizationDone]);
 
   // ─── Compute spendingByCategory for TargetTracker ─────────────────
   const spendingByCategory = useMemo(() => {
@@ -290,7 +340,8 @@ export default function DashboardHome() {
       {/* 1. Categorisation nag — blocks proper analysis until sorted */}
       <CategorisationShepherd
         transactions={allTransactions}
-        onCategorizeComplete={reload}
+        onCategorizeComplete={handleCategorizationComplete}
+        autoStart
       />
 
       {/* 2. Target Setup Wizard — show when no targets for current cycle */}
@@ -389,7 +440,11 @@ export default function DashboardHome() {
       </div>
 
       {/* AI Monthly Analysis */}
-      <AIAnalysis />
+      <AIAnalysis
+        ref={analysisRef}
+        autoTrigger={categorizationDone}
+        onAnalysisComplete={handleAnalysisComplete}
+      />
 
       {/* Household Salary + Mortgage & Loans side by side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

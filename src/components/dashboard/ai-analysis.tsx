@@ -1,10 +1,14 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useImperativeHandle, forwardRef } from 'react';
 import { Brain, Loader2, RefreshCw, AlertTriangle, TrendingUp, TrendingDown, Target, Sparkles } from 'lucide-react';
 import { useTransactionContext } from '@/context/transactions';
 import { getAnalysisForCycle, saveMonthlyAnalysis } from '@/lib/storage';
 import type { Transaction } from '@/types';
+
+export interface AIAnalysisHandle {
+  runAnalysis: () => Promise<void>;
+}
 
 const INTERNAL_CATEGORIES = new Set(['Transfers', 'Savings & Investments']);
 
@@ -24,7 +28,15 @@ function formatGBP(pence: number): string {
   return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(pence / 100);
 }
 
-export function AIAnalysis() {
+interface AIAnalysisProps {
+  onAnalysisComplete?: () => void;
+  autoTrigger?: boolean;
+}
+
+export const AIAnalysis = forwardRef<AIAnalysisHandle, AIAnalysisProps>(function AIAnalysis(
+  { onAnalysisComplete, autoTrigger },
+  ref
+) {
   const {
     transactions,
     totalIncome,
@@ -173,13 +185,26 @@ export function AIAnalysis() {
       setAnalysis(data.analysis);
       setLastAnalysedAt(new Date().toISOString());
       await saveMonthlyAnalysis(period, data.analysis);
+      onAnalysisComplete?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Analysis failed');
     } finally {
       setLoading(false);
     }
   }, [loading, transactions, totalIncome, totalSpending, essentialSpending, discretionarySpending,
-      categoryBreakdown, merchantBreakdown, salaryFlow, categoryCreep, conveniencePremium, period]);
+      categoryBreakdown, merchantBreakdown, salaryFlow, categoryCreep, conveniencePremium, period, onAnalysisComplete]);
+
+  // Expose runAnalysis to parent via ref
+  useImperativeHandle(ref, () => ({ runAnalysis }), [runAnalysis]);
+
+  // Auto-trigger analysis when requested (e.g. after categorization)
+  const [autoTriggered, setAutoTriggered] = useState(false);
+  useEffect(() => {
+    if (autoTrigger && !autoTriggered && !loading && transactions.length > 0) {
+      setAutoTriggered(true);
+      runAnalysis();
+    }
+  }, [autoTrigger, autoTriggered, loading, transactions.length, runAnalysis]);
 
   if (period === 'all') return null;
 
@@ -337,4 +362,4 @@ export function AIAnalysis() {
       )}
     </div>
   );
-}
+});

@@ -340,12 +340,15 @@ function buildUserMessage(data: BriefingRequest): string {
 export async function POST(req: NextRequest) {
   try {
     if (!process.env.OPENAI_API_KEY) {
+      console.error('[api/advisor/briefing] ❌ OPENAI_API_KEY not set')
       return NextResponse.json({ error: 'OPENAI_API_KEY not configured' }, { status: 500 })
     }
 
     const data: BriefingRequest = await req.json()
+    console.log(`[api/advisor/briefing] 📥 type=${data.type} cycleId=${data.cycleId} hasCurrentCycleData=${!!data.currentCycleData}`)
 
     if (!data.type || !SYSTEM_PROMPTS[data.type]) {
+      console.error(`[api/advisor/briefing] ❌ Invalid type: ${data.type}`)
       return NextResponse.json(
         { error: `Invalid briefing type: ${data.type}. Must be upload, weekly, or monthly.` },
         { status: 400 },
@@ -353,6 +356,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!data.cycleId || !data.currentCycleData) {
+      console.error(`[api/advisor/briefing] ❌ Missing cycleId=${data.cycleId} currentCycleData=${!!data.currentCycleData}`)
       return NextResponse.json(
         { error: 'cycleId and currentCycleData are required' },
         { status: 400 },
@@ -361,18 +365,19 @@ export async function POST(req: NextRequest) {
 
     const systemPrompt = SYSTEM_PROMPTS[data.type]
     const userMessage = buildUserMessage(data)
+    console.log(`[api/advisor/briefing] 🤖 Calling OpenAI gpt-5.4 (userMessage length: ${userMessage.length} chars)`)
     const openai = getOpenAI()
 
     const completion = await withRetry(
       () =>
         openai.chat.completions.create({
-          model: 'gpt-5',
+          model: 'gpt-5.4',
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userMessage },
           ],
           temperature: 0.5,
-          max_tokens: 2000,
+          max_completion_tokens: 2000,
           response_format: { type: 'json_object' },
         }),
       {
@@ -382,16 +387,18 @@ export async function POST(req: NextRequest) {
     )
 
     const raw = completion.choices[0]?.message?.content || '{}'
+    console.log(`[api/advisor/briefing] ✅ OpenAI responded (${raw.length} chars, model: ${completion.model})`)
 
     try {
       const briefing = JSON.parse(raw)
       return NextResponse.json({ briefing, type: data.type, model: completion.model })
     } catch {
-      // JSON parse failed — return raw text in wrapper
+      console.error(`[api/advisor/briefing] ⚠️ JSON parse failed, returning raw text`)
       return NextResponse.json({ rawText: raw, type: data.type, model: completion.model })
     }
   } catch (error) {
-    console.error('[api/advisor/briefing]', error)
+    console.error('[api/advisor/briefing] ❌ CAUGHT ERROR:', error instanceof Error ? error.message : error)
+    if (error instanceof Error && error.stack) console.error('[api/advisor/briefing] Stack:', error.stack)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Briefing generation failed' },
       { status: 500 },

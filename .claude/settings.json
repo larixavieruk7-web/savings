@@ -3,7 +3,12 @@
     "PostToolUse": [
       {
         "matcher": "compact",
-        "command": "cat .claude/context-essentials.md"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cat .claude/context-essentials.md"
+          }
+        ]
       }
     ]
   }

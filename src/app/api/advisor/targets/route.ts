@@ -87,13 +87,13 @@ export async function POST(req: NextRequest) {
     const completion = await withRetry(
       () =>
         openai.chat.completions.create({
-          model: 'gpt-5',
+          model: 'gpt-5.4-mini',
           messages: [
             { role: 'system', content: SYSTEM_PROMPT },
             { role: 'user', content: userMessage },
           ],
           temperature: 0.3,
-          max_tokens: 2000,
+          max_completion_tokens: 2000,
           response_format: { type: 'json_object' },
         }),
       {

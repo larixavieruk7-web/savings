@@ -94,7 +94,7 @@ async function categoriseBatch(
 
   const response = await withRetry(
     () => getOpenAI().chat.completions.create({
-      model: 'gpt-5-mini',
+      model: 'gpt-5.4-mini',
       temperature: 0,
       response_format: { type: 'json_object' },
       messages: [
@@ -106,21 +106,36 @@ async function categoriseBatch(
   )
 
   const content = response.choices[0]?.message?.content || '{}'
-  const parsed = JSON.parse(content)
+  console.log(`[categoriser] 🤖 GPT responded (${content.length} chars, model: ${response.model})`)
+
+  let parsed: Record<string, unknown>
+  try {
+    parsed = JSON.parse(content)
+  } catch (e) {
+    console.error(`[categoriser] ❌ JSON parse failed:`, content.slice(0, 500))
+    throw e
+  }
 
   const results: { category: string; essential: boolean }[] = new Array(transactions.length)
     .fill(null)
     .map(() => ({ category: '', essential: false }))
 
   if (Array.isArray(parsed.categories)) {
+    console.log(`[categoriser] 📋 Got ${parsed.categories.length} category results for ${transactions.length} transactions`)
+    let filled = 0
     for (const item of parsed.categories) {
       if (typeof item.index === 'number' && item.index >= 0 && item.index < transactions.length) {
         results[item.index] = {
           category: item.category || '',
           essential: item.essential === true,
         }
+        if (item.category) filled++
       }
     }
+    console.log(`[categoriser] ✅ ${filled}/${transactions.length} got a category`)
+  } else {
+    console.error(`[categoriser] ❌ parsed.categories is not an array. Keys:`, Object.keys(parsed))
+    console.error(`[categoriser] ❌ Raw response preview:`, content.slice(0, 500))
   }
 
   return results

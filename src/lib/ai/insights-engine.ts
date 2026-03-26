@@ -249,7 +249,7 @@ ${summary.monthlyBreakdown.map(m => `  ${m.month}: in £${m.in.toFixed(2)}, out 
 
   const response = await withRetry(
     () => getOpenAI().chat.completions.create({
-      model: 'gpt-5',
+      model: 'gpt-5.4-mini',
       temperature: 0.3,
       response_format: { type: 'json_object' },
       messages: [
