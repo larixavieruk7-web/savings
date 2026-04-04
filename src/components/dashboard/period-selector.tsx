@@ -10,17 +10,23 @@ export function PeriodSelector() {
     <div className="flex items-center gap-1.5 min-w-0">
       <Calendar className="h-4 w-4 text-muted shrink-0 hidden md:block" />
       <div className="flex items-center gap-1 bg-card border border-card-border rounded-lg p-0.5 overflow-x-auto no-scrollbar">
-        {availableCycles.map(({ id, label }) => (
+        {availableCycles.map(({ id, label, isOpen }) => (
           <button
             key={id}
             data-period-btn
             onClick={() => setPeriod(id)}
-            className={`px-2 md:px-2.5 py-1.5 md:py-1 rounded-md text-[11px] md:text-xs font-medium transition-colors whitespace-nowrap ${
+            className={`px-2 md:px-2.5 py-1.5 md:py-1 rounded-md text-[11px] md:text-xs font-medium transition-colors whitespace-nowrap flex items-center gap-1 ${
               period === id
                 ? 'bg-accent text-white'
                 : 'text-muted hover:text-foreground hover:bg-card-border/50'
             }`}
           >
+            {isOpen && (
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
+              </span>
+            )}
             {label}
           </button>
         ))}

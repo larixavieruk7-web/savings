@@ -10,11 +10,18 @@ import { useSpendingTargets } from '@/hooks/useSpendingTargets';
 import { useCommitments } from '@/hooks/useCommitments';
 import { useAdvisorBriefings } from '@/hooks/useAdvisorBriefings';
 
+interface SideEffect {
+  tool: string;
+  summary: string;
+  data: Record<string, unknown>;
+}
+
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  sideEffects?: SideEffect[];
 }
 
 const SUGGESTED_QUESTIONS = [
@@ -397,6 +404,7 @@ export default function AskPage() {
             message: text.trim(),
             context,
             history,
+            cycleId: currentCycleId,
           }),
         });
 
@@ -411,6 +419,7 @@ export default function AskPage() {
           role: 'assistant',
           content: data.reply,
           timestamp: new Date(),
+          sideEffects: data.sideEffects,
         };
 
         setMessages((prev) => [...prev, assistantMessage]);
@@ -426,7 +435,7 @@ export default function AskPage() {
         setIsLoading(false);
       }
     },
-    [isLoading, buildContext, messages]
+    [isLoading, buildContext, messages, currentCycleId]
   );
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -561,6 +570,19 @@ export default function AskPage() {
                   {msg.role === 'assistant' ? (
                     <div className="text-sm space-y-1">
                       {renderMarkdown(msg.content)}
+                      {msg.sideEffects && msg.sideEffects.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-card-border">
+                          {msg.sideEffects.map((se, i) => (
+                            <span
+                              key={i}
+                              className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-accent/15 text-accent"
+                            >
+                              <Sparkles className="h-2.5 w-2.5" />
+                              {se.summary}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <p className="text-sm">{msg.content}</p>

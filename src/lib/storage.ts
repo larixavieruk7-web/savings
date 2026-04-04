@@ -107,10 +107,26 @@ export async function saveTransactions(transactions: Transaction[]): Promise<voi
 }
 
 /** Merge new transactions, deduplicating by id (ON CONFLICT DO NOTHING) */
-export async function mergeTransactions(incoming: Transaction[]): Promise<Transaction[]> {
+export async function mergeTransactions(
+  incoming: Transaction[]
+): Promise<{ transactions: Transaction[]; added: number; skipped: number }> {
+  // Get existing IDs covering the incoming date range for dedup counting
+  const existingAll = await getTransactions();
+  const existingIds = new Set(existingAll.map(t => t.id));
+
+  let added = 0;
+  let skipped = 0;
+  for (const t of incoming) {
+    if (existingIds.has(t.id)) {
+      skipped++;
+    } else {
+      added++;
+    }
+  }
+
   await insertNewTransactions(incoming);
   const all = await getTransactions();
-  return all;
+  return { transactions: all, added, skipped };
 }
 
 /** Update specific transactions (e.g., after AI categorization or manual correction) */

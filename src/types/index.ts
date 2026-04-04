@@ -39,8 +39,12 @@ export interface KnowledgeEntry {
   title: string;
   description: string;
   tags?: string[]; // e.g., ['larissa', 'travel', 'barcelona']
-  type: 'event' | 'context' | 'goal' | 'note';
+  type: 'event' | 'context' | 'goal' | 'note' | 'planned_expense';
   createdAt: string;
+  // Planned expense fields (optional, used when type === 'planned_expense')
+  expectedAmount?: number;    // pence
+  expectedCategory?: string;  // e.g., 'Holidays & Travel'
+  expectedDate?: string;      // ISO date — when the expense is expected
 }
 
 export interface Insight {

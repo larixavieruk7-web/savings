@@ -130,8 +130,13 @@ export function parseAmexCSV(
     errors.push(...result.errors.map((e) => `Row ${e.row}: ${e.message}`));
   }
 
-  const transactions: Transaction[] = [];
-  const seenIds = new Set<string>();
+  // First pass: parse all rows into transactions with base IDs
+  interface ParsedRow {
+    baseId: string;
+    description: string;
+    txn: Omit<Transaction, 'id'>;
+  }
+  const parsed: ParsedRow[] = [];
 
   for (const row of result.data) {
     try {
@@ -165,7 +170,7 @@ export function parseAmexCSV(
       // Priority: custom rules > Amex mapping > keyword rules > Other
       let finalCategory = ruleCategory;
       let isEssential: boolean | undefined;
-      let categorySource: 'rule' | 'ai' | 'manual' = 'rule';
+      const categorySource: 'rule' | 'ai' | 'manual' = 'rule';
 
       if (ruleCategory !== 'Other') {
         // Our rules matched
@@ -185,35 +190,31 @@ export function parseAmexCSV(
       const memberName = getCardMemberName(cardMember);
       const accountName = `Amex ${memberName} (${accountNum})`;
 
-      // Unique ID
-      let id = `amex-${isoDate}-${amountPence}-${accountNum}-${description.slice(0, 25)}`;
-      let suffix = 0;
-      let uniqueId = id;
-      while (seenIds.has(uniqueId)) {
-        suffix++;
-        uniqueId = `${id}-${suffix}`;
-      }
-      seenIds.add(uniqueId);
-
       // Extract merchant from description (clean up Amex format)
       const merchantName = extractAmexMerchant(description, town);
 
-      transactions.push({
-        id: uniqueId,
-        date: isoDate,
-        type: 'AMEX',
-        description: town ? `${description} (${town})` : description,
-        rawDescription: description,
-        amount: amountPence,
-        balance: 0, // Amex doesn't provide running balance
-        category: finalCategory,
-        subcategory,
-        merchantName,
-        isRecurring: false,
-        isEssential,
-        accountName,
-        source: 'amex',
-        categorySource,
+      // Base ID for dedup
+      const baseId = `amex-${isoDate}-${amountPence}-${accountNum}-${description.slice(0, 25)}`;
+
+      parsed.push({
+        baseId,
+        description,
+        txn: {
+          date: isoDate,
+          type: 'AMEX',
+          description: town ? `${description} (${town})` : description,
+          rawDescription: description,
+          amount: amountPence,
+          balance: 0, // Amex doesn't provide running balance
+          category: finalCategory,
+          subcategory,
+          merchantName,
+          isRecurring: false,
+          isEssential,
+          accountName,
+          source: 'amex',
+          categorySource,
+        },
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
@@ -221,7 +222,35 @@ export function parseAmexCSV(
     }
   }
 
+  // Second pass: assign deterministic suffixes by sorting collisions alphabetically
+  const transactions = assignDeterministicIds(parsed);
+
   return { transactions, errors };
+}
+
+/** Assign deterministic IDs: sort collisions by full description so suffix order is stable */
+function assignDeterministicIds(
+  parsed: { baseId: string; description: string; txn: Omit<Transaction, 'id'> }[]
+): Transaction[] {
+  const groups = new Map<string, typeof parsed>();
+  for (const entry of parsed) {
+    const group = groups.get(entry.baseId);
+    if (group) group.push(entry);
+    else groups.set(entry.baseId, [entry]);
+  }
+
+  const transactions: Transaction[] = [];
+  for (const [baseId, group] of groups) {
+    if (group.length === 1) {
+      transactions.push({ ...group[0].txn, id: baseId });
+    } else {
+      const sorted = [...group].sort((a, b) => a.description.localeCompare(b.description));
+      for (let i = 0; i < sorted.length; i++) {
+        transactions.push({ ...sorted[i].txn, id: `${baseId}-${i + 1}` });
+      }
+    }
+  }
+  return transactions;
 }
 
 /** Clean up Amex merchant descriptions */

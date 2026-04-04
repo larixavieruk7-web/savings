@@ -14,6 +14,8 @@ import { computeSubscriptionData } from '@/lib/subscriptions';
 import { HealthScorecardWidget } from '@/components/dashboard/health-scorecard';
 import { RecommendationsPanel } from '@/components/dashboard/recommendations-panel';
 import { SalaryFlowChart } from '@/components/dashboard/salary-flow';
+import { CycleBurndown } from '@/components/dashboard/cycle-burndown';
+import { AccountBalancesPanel } from '@/components/dashboard/AccountBalancesPanel';
 import { AIAnalysis, type AIAnalysisHandle } from '@/components/dashboard/ai-analysis';
 import { OverspendingAlert, StopTheBleeding } from '@/components/dashboard/overspending-alert';
 import { CategorisationShepherd } from '@/components/advisor/categorisation-shepherd';
@@ -63,6 +65,7 @@ export default function DashboardHome() {
     availableCycles,
     reload,
     reloadEssentialMerchants,
+    currentCycleMeta,
   } = useTransactionContext();
 
   const [showSpendingDrilldown, setShowSpendingDrilldown] = useState(false);
@@ -285,6 +288,7 @@ export default function DashboardHome() {
 
   const net = totalIncome - totalSpending;
   const savingsRate = totalIncome > 0 ? (net / totalIncome) * 100 : 0;
+  const isOpenCycle = currentCycleMeta?.isOpen ?? false;
   const { potentialDuplicates } = computeSubscriptionData(transactions);
 
   // Month-over-month comparison
@@ -402,6 +406,9 @@ export default function DashboardHome() {
         monthlyBreakdowns={monthlyBreakdowns}
       />
 
+      {/* Account Balances */}
+      <AccountBalancesPanel />
+
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <KpiCard
@@ -419,17 +426,20 @@ export default function DashboardHome() {
             ? formatChange(currentMonth.spending, prevMonth.spending)
             : undefined}
           positive={false}
+          qualifier={isOpenCycle ? 'so far this cycle' : undefined}
           onClick={() => setShowSpendingDrilldown(true)}
         />
         <KpiCard
           label="Net Savings"
           value={formatGBP(net)}
           positive={net >= 0}
+          qualifier={isOpenCycle ? 'so far this cycle' : undefined}
         />
         <KpiCard
           label="Savings Rate"
           value={`${savingsRate.toFixed(1)}%`}
           positive={savingsRate > 0}
+          qualifier={isOpenCycle ? 'so far this cycle' : undefined}
         />
       </div>
 
@@ -454,7 +464,17 @@ export default function DashboardHome() {
 
       {/* Where salary went + Card spending */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <SalaryFlowChart salaryFlow={salaryFlow} />
+        {isOpenCycle && currentCycleMeta ? (
+          <CycleBurndown
+            transactions={transactions}
+            cycleStart={currentCycleMeta.start}
+            cycleEnd={currentCycleMeta.end}
+            totalSalary={salaryFlow?.totalSalary ?? 0}
+            isOpen={true}
+          />
+        ) : (
+          <SalaryFlowChart salaryFlow={salaryFlow} />
+        )}
         <CardSpendingBreakdown transactions={transactions} />
       </div>
 
@@ -634,12 +654,14 @@ function KpiCard({
   value,
   change,
   positive,
+  qualifier,
   onClick,
 }: {
   label: string;
   value: string;
   change?: string;
   positive: boolean;
+  qualifier?: string;
   onClick?: () => void;
 }) {
   return (
@@ -654,6 +676,9 @@ function KpiCard({
       <p className={`text-lg md:text-2xl font-bold ${positive ? 'text-success' : 'text-danger'}`}>
         {value}
       </p>
+      {qualifier && (
+        <p className="text-[10px] md:text-xs text-muted/70 italic mt-0.5">{qualifier}</p>
+      )}
       {change && (
         <div className="flex items-center gap-1 mt-1">
           {change.startsWith('+') ? (

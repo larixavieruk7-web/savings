@@ -35,22 +35,75 @@ export default function UploadPage() {
   const [redirectMessage, setRedirectMessage] = useState('');
 
   const processFile = useCallback(
-    (file: File): Promise<{ result: ImportResult; transactions: Transaction[] }> => {
-      return new Promise((resolve) => {
-        if (!file.name.endsWith('.csv')) {
-          resolve({
+    async (file: File): Promise<{ result: ImportResult; transactions: Transaction[] }> => {
+      const ext = file.name.toLowerCase().split('.').pop();
+
+      if (ext !== 'csv' && ext !== 'pdf') {
+        return {
+          result: {
+            fileName: file.name,
+            totalParsed: 0,
+            newAdded: 0,
+            duplicatesSkipped: 0,
+            errors: ['Please upload a CSV or PDF file'],
+          },
+          transactions: [],
+        };
+      }
+
+      // ─── PDF path: send to API route ───
+      if (ext === 'pdf') {
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('filename', file.name);
+          const res = await fetch('/api/parse-pdf', { method: 'POST', body: formData });
+          const json = await res.json();
+
+          if (!res.ok) {
+            return {
+              result: {
+                fileName: file.name,
+                totalParsed: 0,
+                newAdded: 0,
+                duplicatesSkipped: 0,
+                errors: [json.error || 'PDF parsing failed', ...(json.errors ?? [])],
+                bank: 'PDF',
+              },
+              transactions: [],
+            };
+          }
+
+          const txns = (json.transactions ?? []) as Transaction[];
+          const source = json.source === 'amex' ? 'Amex' : 'NatWest';
+          return {
+            result: {
+              fileName: file.name,
+              totalParsed: txns.length,
+              newAdded: 0,
+              duplicatesSkipped: 0,
+              errors: json.errors ?? [],
+              bank: `${source} (PDF)`,
+            },
+            transactions: txns,
+          };
+        } catch {
+          return {
             result: {
               fileName: file.name,
               totalParsed: 0,
               newAdded: 0,
               duplicatesSkipped: 0,
-              errors: ['Please upload a CSV file'],
+              errors: ['Failed to parse PDF — try CSV export instead'],
+              bank: 'PDF',
             },
             transactions: [],
-          });
-          return;
+          };
         }
+      }
 
+      // ─── CSV path: parse client-side (unchanged) ───
+      return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = (e) => {
           const csv = e.target?.result as string;
@@ -76,7 +129,7 @@ export default function UploadPage() {
             result: {
               fileName: file.name,
               totalParsed: parsed.transactions.length,
-              newAdded: 0, // will be calculated after merge
+              newAdded: 0,
               duplicatesSkipped: 0,
               errors: parsed.errors,
               bank: detectedBank,
@@ -111,35 +164,27 @@ export default function UploadPage() {
       // Parse all files in parallel
       const parsed = await Promise.all(files.map((f) => processFile(f)));
 
-      // Merge all transactions at once for accurate dedup counts
-      const allTransactions = parsed.flatMap((p) => p.transactions);
-      const countBefore = existingTransactions.length;
-      const merged = await addTransactions(allTransactions);
-      const totalNewAdded = merged.length - countBefore;
+      // Merge all transactions at once — returns accurate dedup counts
+      const allParsedTransactions = parsed.flatMap((p) => p.transactions);
+      const { added: totalNewAdded } =
+        await addTransactions(allParsedTransactions);
 
-      // Calculate per-file results (approximate — dedup is global)
-      const results = parsed.map((p) => ({
-        ...p.result,
-        newAdded: p.transactions.length, // parsed count before dedup
-        duplicatesSkipped: 0,
-      }));
-
-      // Add a summary if multiple files
-      if (files.length > 1) {
-        const totalParsed = parsed.reduce((s, p) => s + p.result.totalParsed, 0);
-        const totalErrors = parsed.flatMap((p) => p.result.errors);
-        results.unshift({
-          fileName: `${files.length} files total`,
-          totalParsed,
-          newAdded: totalNewAdded,
-          duplicatesSkipped: totalParsed - totalNewAdded,
-          errors: totalErrors,
-          bank: 'Summary',
-        });
-      } else if (results.length === 1) {
-        results[0].newAdded = totalNewAdded;
-        results[0].duplicatesSkipped = results[0].totalParsed - totalNewAdded;
-      }
+      // Build per-file dedup stats by checking which IDs from each file were new
+      // We need the existing IDs to figure out per-file splits
+      const existingIds = new Set(existingTransactions.map(t => t.id));
+      const results = parsed.map((p) => {
+        let fileNew = 0;
+        let fileSkipped = 0;
+        for (const t of p.transactions) {
+          if (existingIds.has(t.id)) fileSkipped++;
+          else fileNew++;
+        }
+        return {
+          ...p.result,
+          newAdded: fileNew,
+          duplicatesSkipped: fileSkipped,
+        };
+      });
 
       setImportResults(results);
       setIsProcessing(false);
@@ -152,7 +197,7 @@ export default function UploadPage() {
         }, 2000);
       }
     },
-    [addTransactions, existingTransactions.length, processFile, router]
+    [addTransactions, existingTransactions, processFile, router]
   );
 
   const handleDrop = useCallback(
@@ -216,7 +261,7 @@ export default function UploadPage() {
           Upload Statements
         </h1>
         <p className="text-xs md:text-sm text-muted mt-0.5 md:mt-1">
-          Import CSVs — duplicates auto-skipped
+          Import CSV or PDF statements — duplicates auto-skipped
         </p>
       </div>
 
@@ -240,17 +285,17 @@ export default function UploadPage() {
           }`}
         />
         <h2 className="text-lg font-semibold text-foreground mb-1">
-          {isProcessing ? 'Processing...' : 'Drop your CSVs here'}
+          {isProcessing ? 'Processing...' : 'Drop your statements here'}
         </h2>
         <p className="text-sm text-muted mb-3">
-          NatWest & Amex auto-detected · Multiple files supported
+          NatWest & Amex auto-detected · CSV and PDF supported · Multiple files
         </p>
         <label className="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer">
           <Plus className="h-4 w-4" />
-          Choose CSV Files
+          Choose Files
           <input
             type="file"
-            accept=".csv"
+            accept=".csv,.pdf"
             multiple
             onChange={handleFileInput}
             className="hidden"
@@ -260,65 +305,45 @@ export default function UploadPage() {
 
       {/* Import Results */}
       {importResults.length > 0 && (
-        <div className="space-y-3">
+        <div className="bg-card border border-card-border rounded-xl p-4 space-y-2">
           {importResults.map((importResult, idx) => (
-            <div
-              key={idx}
-              className={`border rounded-xl p-4 ${
-                importResult.errors.length > 0 && importResult.newAdded === 0
-                  ? 'bg-danger/10 border-danger/30'
-                  : 'bg-success/10 border-success/30'
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                {importResult.newAdded > 0 ? (
-                  <CheckCircle2 className="h-5 w-5 text-success" />
-                ) : (
-                  <AlertCircle className="h-5 w-5 text-warning" />
-                )}
-                <span className="font-medium text-foreground">
-                  {importResult.fileName}
-                  {importResult.bank && (
-                    <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-accent/20 text-accent">
-                      {importResult.bank}
-                    </span>
-                  )}
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-4 text-sm">
-                <span className="text-muted">
-                  Parsed:{' '}
-                  <span className="text-foreground font-medium">
-                    {importResult.totalParsed.toLocaleString()}
-                  </span>
-                </span>
-                <span className="text-success">
-                  New:{' '}
-                  <span className="font-medium">
-                    +{importResult.newAdded.toLocaleString()}
-                  </span>
-                </span>
-                {importResult.duplicatesSkipped > 0 && (
-                  <span className="text-muted">
-                    Duplicates skipped:{' '}
-                    <span className="font-medium">
-                      {importResult.duplicatesSkipped.toLocaleString()}
-                    </span>
-                  </span>
-                )}
-              </div>
-              {importResult.errors.length > 0 && (
-                <div className="mt-2 text-xs text-danger/80">
-                  {importResult.errors.slice(0, 3).map((err, i) => (
-                    <p key={i}>{err}</p>
-                  ))}
-                  {importResult.errors.length > 3 && (
-                    <p>...and {importResult.errors.length - 3} more</p>
-                  )}
-                </div>
+            <div key={idx} className="flex items-start gap-2">
+              {importResult.errors.length > 0 && importResult.newAdded === 0 ? (
+                <AlertCircle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4 text-success mt-0.5 shrink-0" />
               )}
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-medium text-foreground">
+                    {importResult.bank ?? 'Unknown'} — {importResult.fileName}
+                  </span>
+                  <span className="text-sm text-muted">→</span>
+                  <span className="text-sm">
+                    <span className="text-success font-medium">{importResult.newAdded} new</span>
+                    {importResult.duplicatesSkipped > 0 && (
+                      <span className="text-muted"> · {importResult.duplicatesSkipped} already existed</span>
+                    )}
+                  </span>
+                </div>
+                {importResult.errors.length > 0 && (
+                  <div className="mt-1 text-xs text-danger/80">
+                    {importResult.errors.slice(0, 3).map((err, i) => (
+                      <p key={i}>{err}</p>
+                    ))}
+                    {importResult.errors.length > 3 && (
+                      <p>...and {importResult.errors.length - 3} more</p>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           ))}
+          {importResults.some(r => r.duplicatesSkipped > 0) && (
+            <p className="text-xs text-muted pt-1 border-t border-card-border mt-2">
+              Overlapping dates detected — duplicates automatically ignored.
+            </p>
+          )}
         </div>
       )}
 

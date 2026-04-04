@@ -27,6 +27,7 @@ const TYPE_COLORS: Record<KnowledgeEntry['type'], string> = {
   context: '#8b5cf6',
   goal: '#22c55e',
   note: '#6b7280',
+  planned_expense: '#f59e0b',
 };
 
 const TYPE_LABELS: Record<KnowledgeEntry['type'], string> = {
@@ -34,6 +35,7 @@ const TYPE_LABELS: Record<KnowledgeEntry['type'], string> = {
   context: 'Context',
   goal: 'Goal',
   note: 'Note',
+  planned_expense: 'Planned Expense',
 };
 
 const ENTRY_TYPES: KnowledgeEntry['type'][] = ['event', 'context', 'goal', 'note'];

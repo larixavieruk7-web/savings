@@ -59,8 +59,13 @@ export function parseNatWestCSV(
     );
   }
 
-  const transactions: Transaction[] = [];
-  const seenIds = new Set<string>();
+  // First pass: parse all rows into transactions with base IDs
+  interface ParsedRow {
+    baseId: string;
+    description: string;
+    txn: Omit<Transaction, 'id'>;
+  }
+  const parsed: ParsedRow[] = [];
 
   for (const row of result.data) {
     try {
@@ -103,35 +108,29 @@ export function parseNatWestCSV(
         // Unknown BAC credits stay as 'Other' to avoid inflating income.
       }
 
-      // Build a unique ID including account to handle multi-account CSVs
+      // Build a base ID including account to handle multi-account CSVs
       const accountNum = row['Account Number']?.trim() || '';
-      let id = `${isoDate}-${amountPence}-${accountNum}-${description.slice(0, 30)}`;
+      const baseId = `${isoDate}-${amountPence}-${accountNum}-${description.slice(0, 30)}`;
 
-      // Handle duplicate IDs (same day, same amount, same description)
-      let suffix = 0;
-      let uniqueId = id;
-      while (seenIds.has(uniqueId)) {
-        suffix++;
-        uniqueId = `${id}-${suffix}`;
-      }
-      seenIds.add(uniqueId);
-
-      transactions.push({
-        id: uniqueId,
-        date: isoDate,
-        type: row.Type?.trim() || '',
+      parsed.push({
+        baseId,
         description,
-        rawDescription: row.Description || '',
-        amount: amountPence,
-        balance: balancePence,
-        category: finalCategory,
-        subcategory,
-        isEssential: ruleEssential,
-        accountName: row['Account Name']?.trim(),
-        source: 'natwest' as const,
-        categorySource: 'rule' as const,
-        isRecurring: false,
-        merchantName: extractMerchant(description),
+        txn: {
+          date: isoDate,
+          type: row.Type?.trim() || '',
+          description,
+          rawDescription: row.Description || '',
+          amount: amountPence,
+          balance: balancePence,
+          category: finalCategory,
+          subcategory,
+          isEssential: ruleEssential,
+          accountName: row['Account Name']?.trim(),
+          source: 'natwest' as const,
+          categorySource: 'rule' as const,
+          isRecurring: false,
+          merchantName: extractMerchant(description),
+        },
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
@@ -139,7 +138,37 @@ export function parseNatWestCSV(
     }
   }
 
+  // Second pass: assign deterministic suffixes by sorting collisions alphabetically
+  const transactions = assignDeterministicIds(parsed);
+
   return { transactions, errors };
+}
+
+/** Assign deterministic IDs: sort collisions by full description so suffix order is stable */
+function assignDeterministicIds(
+  parsed: { baseId: string; description: string; txn: Omit<Transaction, 'id'> }[]
+): Transaction[] {
+  // Group by baseId to find collisions
+  const groups = new Map<string, typeof parsed>();
+  for (const entry of parsed) {
+    const group = groups.get(entry.baseId);
+    if (group) group.push(entry);
+    else groups.set(entry.baseId, [entry]);
+  }
+
+  const transactions: Transaction[] = [];
+  for (const [baseId, group] of groups) {
+    if (group.length === 1) {
+      transactions.push({ ...group[0].txn, id: baseId });
+    } else {
+      // Sort alphabetically by full description for deterministic suffix assignment
+      const sorted = [...group].sort((a, b) => a.description.localeCompare(b.description));
+      for (let i = 0; i < sorted.length; i++) {
+        transactions.push({ ...sorted[i].txn, id: `${baseId}-${i + 1}` });
+      }
+    }
+  }
+  return transactions;
 }
 
 /** Extract a clean merchant name from a NatWest description */

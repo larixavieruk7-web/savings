@@ -12,8 +12,8 @@ import {
   getEssentialMerchants,
 } from '@/lib/storage';
 import { getLocalTransactions, getLocalAccountTypes } from '@/lib/storage-local';
-import type { Transaction, MonthlyBreakdown, PeriodOption, AccountConfig, SalaryFlow, CategoryCreep, HealthScorecard, Recommendation } from '@/types';
-import { format, parseISO, addMonths, setDate, subMonths } from 'date-fns';
+import type { Transaction, MonthlyBreakdown, PeriodOption, SalaryFlow, CategoryCreep, HealthScorecard, Recommendation } from '@/types';
+import { format, parseISO, subDays } from 'date-fns';
 import { detectAllAccountTypes, reclassifyTransfers } from '@/lib/account-hierarchy';
 import { computeSalaryFlow } from '@/lib/money-flow';
 import { detectCategoryCreep } from '@/lib/intelligence/category-creep';
@@ -37,78 +37,86 @@ const INTERNAL_CATEGORIES = new Set(['Transfers', 'Savings & Investments']);
 const INCOME_CATEGORIES = new Set(['Salary']);
 
 export interface SalaryCycle {
-  id: string;    // 'cycle-2026-02'
-  label: string; // 'Feb 2026'
-  start: string; // '2026-02-26' ISO date
-  end: string;   // '2026-03-25' ISO date
+  id: string;         // 'cycle-2026-02'
+  label: string;      // 'Feb 2026'
+  start: string;      // ISO date of salary deposit that opens this cycle
+  end: string;        // ISO date: day before next salary (closed) or today (open)
+  isOpen: boolean;    // true = current in-progress cycle
+  salaryDate: string; // ISO date of the salary deposit
 }
 
-// Salary cycle boundary: 23rd of each month.
-// UK employers pay "around the 26th" but shift earlier for weekends/holidays.
-// Dec 25 = Christmas, Dec 26 = Boxing Day → salary lands Dec 23-24.
-// Using the 23rd gives a 3-day buffer to catch early payments.
-const CYCLE_START_DAY = 23;
-
-/** Salary cycles run from the 23rd of one month to the 22nd of the next */
-function buildCycle(year: number, month: number): SalaryCycle {
-  // month is 1-based
-  const startDate = setDate(new Date(year, month - 1, 1), CYCLE_START_DAY);
-  const endDate = setDate(addMonths(new Date(year, month - 1, 1), 1), CYCLE_START_DAY - 1);
-  const id = `cycle-${format(startDate, 'yyyy-MM')}`;
-  const label = format(startDate, 'MMM yyyy');
-  return {
-    id,
-    label,
-    start: format(startDate, 'yyyy-MM-dd'),
-    end: format(endDate, 'yyyy-MM-dd'),
-  };
+/** Find actual salary deposit dates from transactions */
+function detectSalaryDates(transactions: Transaction[]): string[] {
+  const salaryTxns = transactions.filter(
+    (t) => t.amount > 0 && (t.category === 'Salary' || t.description?.includes('JPMCB'))
+  );
+  // Deduplicate by calendar month — keep earliest salary date per month
+  const byMonth = new Map<string, string>();
+  for (const t of salaryTxns) {
+    const monthKey = t.date.slice(0, 7); // 'yyyy-MM'
+    const existing = byMonth.get(monthKey);
+    if (!existing || t.date < existing) {
+      byMonth.set(monthKey, t.date);
+    }
+  }
+  return Array.from(byMonth.values()).sort();
 }
 
-function getCurrentCycle(): SalaryCycle {
-  const now = new Date();
-  const cycleStartMonth = now.getDate() >= CYCLE_START_DAY
-    ? now
-    : subMonths(now, 1);
-  return buildCycle(cycleStartMonth.getFullYear(), cycleStartMonth.getMonth() + 1);
-}
+/** Build cycles anchored to actual salary deposit dates */
+function buildCyclesFromSalaryDates(salaryDates: string[], today: string): SalaryCycle[] {
+  if (salaryDates.length === 0) {
+    // Fallback: no salary data yet — single open cycle covering all time
+    return [{
+      id: 'cycle-open',
+      label: 'Current',
+      start: '2000-01-01',
+      end: today,
+      isOpen: true,
+      salaryDate: today,
+    }];
+  }
 
-function getAvailableCycles(transactions: Transaction[]): SalaryCycle[] {
-  if (transactions.length === 0) return [getCurrentCycle()];
-
-  const dates = transactions.map((t) => t.date).sort();
-  const earliest = parseISO(dates[0]);
-
-  const startYear = earliest.getFullYear();
-  const startMonth = earliest.getMonth() + 1;
-  const cycleStartMonth = earliest.getDate() >= CYCLE_START_DAY
-    ? new Date(startYear, startMonth - 1, 1)
-    : subMonths(new Date(startYear, startMonth - 1, 1), 1);
-
-  const current = getCurrentCycle();
   const cycles: SalaryCycle[] = [];
-  let cursor = cycleStartMonth;
 
-  while (true) {
-    const cycle = buildCycle(cursor.getFullYear(), cursor.getMonth() + 1);
-    cycles.push(cycle);
-    if (cycle.id === current.id) break;
-    cursor = addMonths(cursor, 1);
-    // Safety: don't go past current
-    if (cursor > new Date()) break;
+  for (let i = 0; i < salaryDates.length; i++) {
+    const salaryDate = salaryDates[i];
+    const isLast = i === salaryDates.length - 1;
+
+    let end: string;
+    let isOpen: boolean;
+
+    if (isLast) {
+      // Open cycle — runs from this salary to today
+      end = today;
+      isOpen = true;
+    } else {
+      // Closed cycle — runs from this salary to day before next salary
+      const nextSalary = parseISO(salaryDates[i + 1]);
+      end = format(subDays(nextSalary, 1), 'yyyy-MM-dd');
+      isOpen = false;
+    }
+
+    const parsed = parseISO(salaryDate);
+    cycles.push({
+      id: `cycle-${format(parsed, 'yyyy-MM')}`,
+      label: format(parsed, 'MMM yyyy'),
+      start: salaryDate,
+      end,
+      isOpen,
+      salaryDate,
+    });
   }
 
   return cycles.reverse(); // most recent first
 }
 
-function getCycleBoundaries(period: PeriodOption): { start: string | null; end: string | null } {
+function getCycleBoundariesFromList(
+  period: PeriodOption,
+  cycles: SalaryCycle[]
+): { start: string | null; end: string | null } {
   if (period === 'all') return { start: null, end: null };
-  if (period.startsWith('cycle-')) {
-    const [, yearStr, monthStr] = period.split('-');
-    const year = parseInt(yearStr, 10);
-    const month = parseInt(monthStr, 10);
-    const cycle = buildCycle(year, month);
-    return { start: cycle.start, end: cycle.end };
-  }
+  const found = cycles.find((c) => c.id === period);
+  if (found) return { start: found.start, end: found.end };
   return { start: null, end: null };
 }
 
@@ -116,7 +124,8 @@ export function useTransactions() {
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState<PeriodOption>(getCurrentCycle().id);
+  const [periodRaw, setPeriodRaw] = useState<PeriodOption>('all');
+  const [userHasChosen, setUserHasChosen] = useState(false);
   const loadedRef = useRef(false);
   const [essentialMerchants, setEssentialMerchants] = useState<string[]>([]);
 
@@ -168,9 +177,9 @@ export function useTransactions() {
   }, []);
 
   const addTransactions = useCallback(async (incoming: Transaction[]) => {
-    const merged = await mergeTransactions(incoming);
+    const { transactions: merged, added, skipped } = await mergeTransactions(incoming);
     setAllTransactions(merged);
-    return merged;
+    return { transactions: merged, added, skipped };
   }, []);
 
   const updateMany = useCallback(
@@ -195,16 +204,30 @@ export function useTransactions() {
     setAllTransactions([]);
   }, []);
 
-  // Available salary cycles, derived from all loaded transactions
-  const availableCycles = useMemo(
-    () => getAvailableCycles(allTransactions),
-    [allTransactions]
-  );
+  // Available salary cycles, anchored to actual salary deposit dates
+  const availableCycles = useMemo(() => {
+    const salaryDates = detectSalaryDates(allTransactions);
+    const today = format(new Date(), 'yyyy-MM-dd');
+    return buildCyclesFromSalaryDates(salaryDates, today);
+  }, [allTransactions]);
 
-  // Derive period date boundaries from cycle or 'all'
+  // Auto-default to latest cycle until user explicitly picks a period
+  const period = useMemo(() => {
+    if (!userHasChosen && availableCycles.length > 0 && availableCycles[0].id !== 'cycle-open') {
+      return availableCycles[0].id;
+    }
+    return periodRaw;
+  }, [periodRaw, availableCycles, userHasChosen]);
+
+  const setPeriod = useCallback((p: PeriodOption) => {
+    setUserHasChosen(true);
+    setPeriodRaw(p);
+  }, []);
+
+  // Derive period date boundaries from the pre-built cycles list
   const { start: startDate, end: endDate } = useMemo(
-    () => getCycleBoundaries(period),
-    [period]
+    () => getCycleBoundariesFromList(period, availableCycles),
+    [period, availableCycles]
   );
 
   // Filtered transactions based on the active period
@@ -458,6 +481,8 @@ export function useTransactions() {
     uncategorizedCount,
     // Account hierarchy
     accountTypes,
+    // Cycle metadata (includes isOpen flag)
+    currentCycleMeta,
     // Intelligence
     salaryFlow,
     categoryCreep,

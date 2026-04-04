@@ -80,6 +80,9 @@ export type Database = {
           created_at: string | null
           date: string
           description: string | null
+          expected_amount: number | null
+          expected_category: string | null
+          expected_date: string | null
           id: string
           tags: string[] | null
           title: string
@@ -90,6 +93,9 @@ export type Database = {
           created_at?: string | null
           date: string
           description?: string | null
+          expected_amount?: number | null
+          expected_category?: string | null
+          expected_date?: string | null
           id: string
           tags?: string[] | null
           title: string
@@ -100,6 +106,9 @@ export type Database = {
           created_at?: string | null
           date?: string
           description?: string | null
+          expected_amount?: number | null
+          expected_category?: string | null
+          expected_date?: string | null
           id?: string
           tags?: string[] | null
           title?: string

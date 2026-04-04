@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { withRetry, isRetryableOpenAIError } from '@/lib/ai/retry'
+import { ADVISOR_TOOLS, executeToolCall, type SideEffect } from '@/lib/ai/chat-tools'
+import { createClient } from '@/lib/supabase/server'
 
 let _openai: OpenAI | null = null
 function getOpenAI() {
@@ -29,12 +31,23 @@ PROACTIVE:
 - If a commitment is overdue, bring it up.
 - If there's a quick win they haven't acted on, nudge them.
 
+ACTIONS:
+- You have tools to take action during conversations. USE THEM when appropriate:
+  - Record life events, goals, or notes to the Knowledge Bank (add_knowledge_entry)
+  - Record planned/upcoming expenses with amounts so the system can adjust budgets (add_planned_expense)
+  - Create tracked commitments when the user agrees to take action (create_commitment)
+  - Adjust spending targets when the user requests or when a planned expense warrants it (update_spending_target)
+- When the user mentions an upcoming expense with an amount, ALWAYS use add_planned_expense.
+- When the user agrees to do something (call a provider, reduce spending, etc.), ALWAYS create a commitment.
+- After using a tool, incorporate what you did into your response naturally. Don't just say "I've recorded it" — also give your financial advice.
+
 HARD RULES:
 - NEVER suggest external apps or services. You ARE the tool.
 - NEVER give generic advice. Every statement must reference their data.
 - Format amounts as £X.XX from their actual figures.
 - Keep responses under 200 words. Be direct, not thorough.
-- Never say "I don't have enough information" if the data contains relevant sections.`
+- Never say "I don't have enough information" if the data contains relevant sections.
+- When converting user amounts to pence for tools, multiply by 100 (e.g. £1,500 = 150000 pence).`
 
 interface RecurringAccountEntry {
   account: string
@@ -323,21 +336,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'OPENAI_API_KEY not configured' }, { status: 500 })
     }
 
-    const { message, context, history } = await req.json() as {
+    const { message, context, history, cycleId } = await req.json() as {
       message: string
       context: ChatContext
       history?: ChatMessage[]
+      cycleId?: string
     }
 
     if (!message || typeof message !== 'string') {
       return NextResponse.json({ error: 'message is required' }, { status: 400 })
     }
 
+    // Get authenticated user for tool execution
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    const userId = user?.id ?? ''
+
     const contextMessage = buildContextMessage(context || {})
+
+    // Include current date and cycle in context so tools can use them
+    const dateContext = `Today is ${new Date().toISOString().split('T')[0]}. Current salary cycle: ${cycleId || 'unknown'}.`
 
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: contextMessage },
+      { role: 'user', content: `${dateContext}\n\n${contextMessage}` },
     ]
 
     // Add conversation history (last 10 exchanges to keep token usage reasonable)
@@ -352,14 +374,17 @@ export async function POST(req: NextRequest) {
     messages.push({ role: 'user', content: message })
 
     const openai = getOpenAI()
+    const sideEffects: SideEffect[] = []
 
-    const completion = await withRetry(
+    // Initial completion — may include tool calls
+    let completion = await withRetry(
       () =>
         openai.chat.completions.create({
           model: 'gpt-5.4-mini',
           messages,
+          tools: userId ? ADVISOR_TOOLS : undefined, // Only offer tools if authenticated
           temperature: 0.7,
-          max_completion_tokens: 1000,
+          max_completion_tokens: 1500,
         }),
       {
         isRetryable: isRetryableOpenAIError,
@@ -367,9 +392,72 @@ export async function POST(req: NextRequest) {
       }
     )
 
+    // Tool execution loop — handle up to 3 rounds of tool calls
+    let rounds = 0
+    while (
+      completion.choices[0]?.finish_reason === 'tool_calls' &&
+      completion.choices[0]?.message?.tool_calls &&
+      rounds < 3
+    ) {
+      const assistantMessage = completion.choices[0].message
+      messages.push(assistantMessage)
+
+      // Execute each tool call
+      for (const toolCall of assistantMessage.tool_calls ?? []) {
+        if (toolCall.type !== 'function') continue
+        const fnCall = toolCall as { id: string; type: 'function'; function: { name: string; arguments: string } }
+        const args = JSON.parse(fnCall.function.arguments)
+
+        // Inject cycleId if the tool needs it and it wasn't provided by GPT
+        if (args.cycleId === undefined && cycleId) {
+          args.cycleId = cycleId
+        }
+
+        try {
+          const { result, sideEffect } = await executeToolCall(
+            fnCall.function.name,
+            args,
+            supabase,
+            userId,
+          )
+          sideEffects.push(sideEffect)
+          messages.push({
+            role: 'tool',
+            tool_call_id: toolCall.id,
+            content: result,
+          })
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : 'Tool execution failed'
+          console.error(`[api/chat] Tool ${toolCall.function.name} failed:`, errorMsg)
+          messages.push({
+            role: 'tool',
+            tool_call_id: toolCall.id,
+            content: `Error: ${errorMsg}`,
+          })
+        }
+      }
+
+      // Get next completion with tool results
+      completion = await withRetry(
+        () =>
+          openai.chat.completions.create({
+            model: 'gpt-5.4-mini',
+            messages,
+            tools: ADVISOR_TOOLS,
+            temperature: 0.7,
+            max_completion_tokens: 1500,
+          }),
+        {
+          isRetryable: isRetryableOpenAIError,
+          label: 'chat-completion-tools',
+        }
+      )
+      rounds++
+    }
+
     const reply = completion.choices[0]?.message?.content || 'Sorry, I could not generate a response.'
 
-    return NextResponse.json({ reply })
+    return NextResponse.json({ reply, sideEffects: sideEffects.length > 0 ? sideEffects : undefined })
   } catch (error) {
     console.error('[api/chat]', error)
     return NextResponse.json(
