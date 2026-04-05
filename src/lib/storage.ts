@@ -84,7 +84,17 @@ import {
   fetchAdvisorCommitments,
   insertAdvisorCommitment,
   updateAdvisorCommitment as supabaseUpdateAdvisorCommitment,
+  fetchManualBalances as supabaseFetchManualBalances,
+  setManualBalance as supabaseSetManualBalance,
 } from '@/lib/supabase/storage';
+
+export async function getManualBalances(): Promise<Record<string, number>> {
+  return supabaseFetchManualBalances();
+}
+
+export async function saveManualBalance(slotKey: string, pence: number): Promise<boolean> {
+  return supabaseSetManualBalance(slotKey, pence);
+}
 
 import type { StoredAnalysis } from '@/lib/storage-local';  // used as value type within this file
 

@@ -761,6 +761,62 @@ export async function markMigrationCompleted(): Promise<boolean> {
   })
 }
 
+// ─── Manual balances (loan + Amex cards) ────────────────────────────
+// Stored as a jsonb map in user_settings.manual_balances:
+//   { "natwest-loan": 691359, "amex-gus-ba": 221165, ... }
+// Source of truth for numbers the user types in — figures Amex/lenders
+// report that we can't derive from CSV transactions alone.
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getClientAny(): Promise<any> {
+  return getClient()
+}
+
+export async function fetchManualBalances(): Promise<Record<string, number>> {
+  try {
+    const userId = await getUserId()
+    if (!userId) return {}
+    const supabase = await getClientAny()
+    const { data, error } = await supabase
+      .from('user_settings')
+      .select('manual_balances')
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (error) {
+      console.error('[storage] fetchManualBalances error:', error.message)
+      return {}
+    }
+    return (data?.manual_balances as Record<string, number>) ?? {}
+  } catch (err) {
+    console.error('[storage] fetchManualBalances error:', err)
+    return {}
+  }
+}
+
+export async function setManualBalance(slotKey: string, pence: number): Promise<boolean> {
+  try {
+    const userId = await getUserId()
+    if (!userId) return false
+    const current = await fetchManualBalances()
+    const next = { ...current, [slotKey]: pence }
+    const supabase = await getClientAny()
+    const { error } = await supabase
+      .from('user_settings')
+      .upsert(
+        { user_id: userId, manual_balances: next },
+        { onConflict: 'user_id' }
+      )
+    if (error) {
+      console.error('[storage] setManualBalance error:', error.message)
+      return false
+    }
+    return true
+  } catch (err) {
+    console.error('[storage] setManualBalance error:', err)
+    return false
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // ADVISOR BRIEFINGS
 // ═══════════════════════════════════════════════════════════════════

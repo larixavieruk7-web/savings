@@ -113,10 +113,15 @@ function getCardMemberName(member: string): string {
   return parts[nameIdx] || member;
 }
 
-/** Parse an Amex CSV string into normalized transactions */
+/** Parse an Amex CSV string into normalized transactions.
+ *  `accountHint` is used when the CSV is a single-card export that omits the
+ *  `Card Member` and `Account #` columns (Amex's "one card only" download
+ *  variant). Pass `{ memberName, accountNum }` and it becomes the account_name
+ *  for all rows. Ignored when the CSV has the columns populated. */
 export function parseAmexCSV(
   csvString: string,
-  customRules: CategoryRule[] = []
+  customRules: CategoryRule[] = [],
+  accountHint?: { memberName: string; accountNum: string }
 ): { transactions: Transaction[]; errors: string[] } {
   const errors: string[] = [];
 
@@ -156,8 +161,10 @@ export function parseAmexCSV(
       const amountPence = Math.round(-amountPounds * 100);
 
       const description = row.Description?.trim() || '';
-      const cardMember = row['Card Member']?.trim() || '';
-      const accountNum = row['Account #']?.trim() || '';
+      const cardMemberRaw = row['Card Member']?.trim() || '';
+      const accountNumRaw = row['Account #']?.trim() || '';
+      const cardMember = cardMemberRaw || accountHint?.memberName || '';
+      const accountNum = accountNumRaw || accountHint?.accountNum || '';
       const town = row['Town/City']?.trim() || '';
       const amexCategory = row.Category?.trim() || '';
 

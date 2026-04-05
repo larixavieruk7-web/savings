@@ -63,27 +63,49 @@ export function parseNatWestCSV(
   interface ParsedRow {
     baseId: string;
     description: string;
+    accountNum: string;
     txn: Omit<Transaction, 'id'>;
   }
   const parsed: ParsedRow[] = [];
 
+  // NatWest credit-card CSVs leave the Balance column blank on every row and
+  // only publish the real outstanding balance on a "Balance as at …" summary
+  // row. Capture those per-account so we can stamp the latest onto the most
+  // recent transaction after parsing.
+  const balanceSnapshots = new Map<string, number>();
+
   for (const row of result.data) {
     try {
-      if (!row.Date?.trim() || !row.Value?.trim()) continue;
+      // Balance-as-at summary row: no Value, but Balance is populated.
+      if (row.Description?.trim().startsWith('Balance as at')) {
+        const acct = row['Account Number']?.trim() || '';
+        const balStr = row.Balance?.trim().replace(/[£,]/g, '');
+        if (acct && balStr) {
+          const bal = parseFloat(balStr);
+          if (!isNaN(bal)) balanceSnapshots.set(acct, Math.round(bal * 100));
+        }
+        continue;
+      }
 
-      // Skip "Balance as at" summary rows
-      if (row.Description?.trim().startsWith('Balance as at')) continue;
+      if (!row.Date?.trim() || !row.Value?.trim()) continue;
 
       const parsedDate = parseNatWestDate(row.Date);
       const isoDate = format(parsedDate, 'yyyy-MM-dd');
 
-      // Parse amount — NatWest uses negative for outflows
+      // Parse amount — NatWest current/savings use negative for outflows,
+      // BUT NatWest credit-card CSVs invert the sign: purchases are positive
+      // and payments received are negative. Detect credit cards by the masked
+      // account number (e.g. "546811******1853") and flip.
+      const accountNum = row['Account Number']?.trim() || '';
+      const isCreditCard = accountNum.includes('*');
+
       const amountStr = row.Value.trim().replace(/[£,]/g, '');
-      const amountPounds = parseFloat(amountStr);
-      if (isNaN(amountPounds)) {
+      const amountPoundsRaw = parseFloat(amountStr);
+      if (isNaN(amountPoundsRaw)) {
         errors.push(`Invalid amount "${row.Value}" for: ${row.Description}`);
         continue;
       }
+      const amountPounds = isCreditCard ? -amountPoundsRaw : amountPoundsRaw;
       const amountPence = Math.round(amountPounds * 100);
 
       // Parse balance
@@ -109,12 +131,12 @@ export function parseNatWestCSV(
       }
 
       // Build a base ID including account to handle multi-account CSVs
-      const accountNum = row['Account Number']?.trim() || '';
       const baseId = `${isoDate}-${amountPence}-${accountNum}-${description.slice(0, 30)}`;
 
       parsed.push({
         baseId,
         description,
+        accountNum,
         txn: {
           date: isoDate,
           type: row.Type?.trim() || '',
@@ -138,7 +160,21 @@ export function parseNatWestCSV(
     }
   }
 
-  // Second pass: assign deterministic suffixes by sorting collisions alphabetically
+  // Second pass: stamp captured "Balance as at" snapshots onto the most recent
+  // txn of each account. NatWest credit-card rows otherwise have empty Balance.
+  for (const [acct, balPence] of balanceSnapshots) {
+    let latestIdx = -1;
+    let latestDate = '';
+    for (let i = 0; i < parsed.length; i++) {
+      if (parsed[i].accountNum === acct && parsed[i].txn.date > latestDate) {
+        latestDate = parsed[i].txn.date;
+        latestIdx = i;
+      }
+    }
+    if (latestIdx >= 0) parsed[latestIdx].txn.balance = balPence;
+  }
+
+  // Third pass: assign deterministic suffixes by sorting collisions alphabetically
   const transactions = assignDeterministicIds(parsed);
 
   return { transactions, errors };
@@ -146,7 +182,7 @@ export function parseNatWestCSV(
 
 /** Assign deterministic IDs: sort collisions by full description so suffix order is stable */
 function assignDeterministicIds(
-  parsed: { baseId: string; description: string; txn: Omit<Transaction, 'id'> }[]
+  parsed: { baseId: string; description: string; accountNum: string; txn: Omit<Transaction, 'id'> }[]
 ): Transaction[] {
   // Group by baseId to find collisions
   const groups = new Map<string, typeof parsed>();
